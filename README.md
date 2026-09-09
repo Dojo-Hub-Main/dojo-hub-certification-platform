@@ -10,6 +10,14 @@ Three roles, one platform:
 
 Every issued certificate carries an HMAC-signed hash and a QR code resolving to a public verification page, so a credential can be checked by anyone without an account.
 
+**Live at [learning.dojohubug.com](https://learning.dojohubug.com).**
+
+The platform is also reachable at its original `dojo-hub-web.onrender.com` address, and that
+must stay so: a certificate records its verification link at the moment it is issued, so
+every certificate issued before the custom domain was added points there. A PDF already in
+someone's hands cannot be updated, so switching that address off would silently break those
+credentials.
+
 ## Tech stack
 
 ### Backend
