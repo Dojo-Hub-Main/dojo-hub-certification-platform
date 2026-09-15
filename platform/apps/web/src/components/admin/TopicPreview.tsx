@@ -4,6 +4,7 @@ import { FileText, Clock, VideoOff } from 'lucide-react';
 import { TrackDto } from '@dojo-hub/shared';
 import { formatDuration, youTubeEmbedUrl, youTubeId } from '@/lib/video';
 import { Badge } from '../ui/Badge';
+import { LessonResources } from '../student/LessonResources';
 
 type Topic = TrackDto['modules'][number]['topics'][number];
 
@@ -79,6 +80,7 @@ export function TopicPreview({ topic }: { topic: Topic }) {
       )}
 
       {topic.videoUrl && <p className="text-[12px] font-mono text-navy-300 break-all">{topic.videoUrl}</p>}
+      <LessonResources resources={topic.resources} documents={topic.documents} />
     </div>
   );
 }

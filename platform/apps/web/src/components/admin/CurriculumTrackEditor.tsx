@@ -17,6 +17,8 @@ import { FileDropzone } from '../student/FileDropzone';
 import { DurationInput } from './DurationInput';
 import { TopicPreview } from './TopicPreview';
 import { ModuleQuizEditor } from './ModuleQuizEditor';
+import { TopicExtrasFields, ResourceRow, resourceProblem, cleanResources } from './TopicExtrasFields';
+import type { UploadedFile } from '../student/FileDropzone';
 
 type Module = TrackDto['modules'][number];
 
@@ -28,12 +30,29 @@ type TopicDraft = {
   durationSeconds: number;
   videoUrl: string;
   tools: string;
+  documents: UploadedFile[];
+  resources: ResourceRow[];
 };
 
-const EMPTY_DRAFT: TopicDraft = { title: '', description: '', durationSeconds: 600, videoUrl: '', tools: '' };
+const EMPTY_DRAFT: TopicDraft = {
+  title: '',
+  description: '',
+  durationSeconds: 600,
+  videoUrl: '',
+  tools: '',
+  documents: [],
+  resources: [],
+};
 
 function draftHasContent(d: TopicDraft): boolean {
-  return Boolean(d.title.trim() || d.description.trim() || d.videoUrl.trim() || d.tools.trim());
+  return Boolean(
+    d.title.trim() ||
+      d.description.trim() ||
+      d.videoUrl.trim() ||
+      d.tools.trim() ||
+      (d.documents ?? []).length ||
+      (d.resources ?? []).some((r) => r.title.trim() || r.url.trim()),
+  );
 }
 type Topic = Module['topics'][number];
 
@@ -379,6 +398,9 @@ function ModuleDetail({
 }) {
   // Draft lives in the parent so it survives this component unmounting.
   const { title, description, durationSeconds, videoUrl, tools } = draft;
+  // Drafts started before these fields existed will not have them.
+  const documents = draft.documents ?? [];
+  const resources = draft.resources ?? [];
   const patch = (fields: Partial<TopicDraft>) => onDraftChange({ ...draft, ...fields });
   const setTitle = (v: string) => patch({ title: v });
   const setDescription = (v: string) => patch({ description: v });
@@ -399,6 +421,8 @@ function ModuleDetail({
         // No video is a valid lesson — don't substitute a placeholder clip.
         videoUrl: videoUrl.trim() || undefined,
         tools: toolsToArray(tools),
+        resources: cleanResources(resources),
+        documentIds: documents.map((d) => d.id),
       }),
     onSuccess: (created) => {
       onChanged();
@@ -421,7 +445,8 @@ function ModuleDetail({
 
   // Description is optional, but a half-typed one is still rejected.
   const topicDescTooShort = description.trim().length > 0 && description.trim().length < 5;
-  const canAddTopic = title.trim().length >= 3 && !topicDescTooShort;
+  const addResourceProblem = resourceProblem(resources);
+  const canAddTopic = title.trim().length >= 3 && !topicDescTooShort && !addResourceProblem;
 
   return (
     <div className="border-t border-navy-100 p-4 space-y-4 bg-navy-50/40">
@@ -535,6 +560,12 @@ function ModuleDetail({
           <input value={tools} onChange={(e) => setTools(e.target.value)} placeholder="Tools (comma separated)" className="input" />
         </div>
         <VideoSourceInput videoUrl={videoUrl} onVideoUrlChange={setVideoUrl} />
+        <TopicExtrasFields
+          documents={documents}
+          onDocumentsChange={(next) => patch({ documents: next })}
+          resources={resources}
+          onResourcesChange={(next) => patch({ resources: next })}
+        />
         <div className="flex items-center gap-2 flex-wrap">
           <Button size="sm" disabled={!canAddTopic} loading={addTopic.isPending} onClick={() => addTopic.mutate()}>
             <Plus className="w-3.5 h-3.5" /> Add Topic
@@ -542,7 +573,11 @@ function ModuleDetail({
           {/* Without this the button just sits greyed out with no stated reason. */}
           {!canAddTopic && (
             <span className="text-[12px] text-navy-400">
-              {title.trim().length < 3 ? 'Enter a topic title to enable this.' : 'Finish or clear the description to enable this.'}
+              {title.trim().length < 3
+                ? 'Enter a topic title to enable this.'
+                : topicDescTooShort
+                  ? 'Finish or clear the description to enable this.'
+                  : 'Finish or remove the unfinished link to enable this.'}
             </span>
           )}
         </div>
@@ -557,6 +592,10 @@ function TopicEditForm({ topic, onCancel, onSaved }: { topic: Topic; onCancel: (
   const [durationSeconds, setDurationSeconds] = useState(topic.durationSeconds);
   const [videoUrl, setVideoUrl] = useState(topic.videoUrl);
   const [tools, setTools] = useState(topic.tools.join(', '));
+  const [documents, setDocuments] = useState<UploadedFile[]>(
+    (topic.documents ?? []).map((d) => ({ id: d.id, originalName: d.originalName, sizeBytes: d.sizeBytes, url: d.url })),
+  );
+  const [resources, setResources] = useState<ResourceRow[]>(topic.resources ?? []);
   const [error, setError] = useState<string | null>(null);
 
   const save = useMutation({
@@ -567,6 +606,9 @@ function TopicEditForm({ topic, onCancel, onSaved }: { topic: Topic; onCancel: (
         durationSeconds,
         videoUrl,
         tools: toolsToArray(tools),
+        resources: cleanResources(resources),
+        // The full set, so a document removed here is removed from the lesson too.
+        documentIds: documents.map((d) => d.id),
       }),
     onSuccess: onSaved,
     onError: (e) => setError(e instanceof ApiError ? e.message : 'Failed to save topic.'),
@@ -574,7 +616,8 @@ function TopicEditForm({ topic, onCancel, onSaved }: { topic: Topic; onCancel: (
 
   // Mirrors the add form: title required, description optional but not half-written.
   const descTooShort = description.trim().length > 0 && description.trim().length < 5;
-  const canSave = title.trim().length >= 3 && !descTooShort;
+  const editResourceProblem = resourceProblem(resources);
+  const canSave = title.trim().length >= 3 && !descTooShort && !editResourceProblem;
 
   return (
     <div className="bg-white border border-navy-200 rounded-lg p-3 space-y-2">
@@ -599,6 +642,12 @@ function TopicEditForm({ topic, onCancel, onSaved }: { topic: Topic; onCancel: (
         <input value={tools} onChange={(e) => setTools(e.target.value)} placeholder="Tools (comma separated)" className="input" />
       </div>
       <VideoSourceInput videoUrl={videoUrl} onVideoUrlChange={setVideoUrl} />
+      <TopicExtrasFields
+        documents={documents}
+        onDocumentsChange={setDocuments}
+        resources={resources}
+        onResourcesChange={setResources}
+      />
       <div className="flex gap-2">
         <Button size="sm" disabled={!canSave} loading={save.isPending} onClick={() => save.mutate()}>
           Save Changes

@@ -1,9 +1,14 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   ArrayMinSize,
   IsArray,
+  IsIn,
   IsInt,
+  IsUUID,
+  IsUrl,
+  MaxLength,
   IsOptional,
   IsString,
   Min,
@@ -28,6 +33,23 @@ export class SubtitleCueInputDto {
   @ApiProperty()
   @IsString()
   text: string;
+}
+
+
+export class TopicResourceInputDto {
+  @ApiProperty()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(200)
+  title: string;
+
+  @ApiProperty()
+  @IsUrl({ protocols: ['http', 'https'], require_protocol: true }, { message: 'Each link must be a full http(s) address.' })
+  url: string;
+
+  @ApiProperty({ enum: ['VIDEO', 'LINK'] })
+  @IsIn(['VIDEO', 'LINK'])
+  kind: 'VIDEO' | 'LINK';
 }
 
 export class CreateTopicDto {
@@ -70,6 +92,23 @@ export class CreateTopicDto {
   @ValidateNested({ each: true })
   @Type(() => SubtitleCueInputDto)
   subtitles?: SubtitleCueInputDto[];
+
+  /** Extra videos and links, replacing the lesson's list as a whole. */
+  @ApiProperty({ type: [TopicResourceInputDto], required: false })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(30)
+  @ValidateNested({ each: true })
+  @Type(() => TopicResourceInputDto)
+  resources?: TopicResourceInputDto[];
+
+  /** Uploaded files to attach as reference material — the complete intended set. */
+  @ApiProperty({ type: [String], required: false })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(30)
+  @IsUUID('all', { each: true })
+  documentIds?: string[];
 }
 
 export class UpdateTopicDto {
@@ -113,4 +152,22 @@ export class UpdateTopicDto {
   @ValidateNested({ each: true })
   @Type(() => SubtitleCueInputDto)
   subtitles?: SubtitleCueInputDto[];
+
+  /** Extra videos and links, replacing the lesson's list as a whole. */
+  @ApiProperty({ type: [TopicResourceInputDto], required: false })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(30)
+  @ValidateNested({ each: true })
+  @Type(() => TopicResourceInputDto)
+  resources?: TopicResourceInputDto[];
+
+  /** Uploaded files to attach as reference material — the complete intended set. */
+  @ApiProperty({ type: [String], required: false })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(30)
+  @IsUUID('all', { each: true })
+  documentIds?: string[];
 }
+

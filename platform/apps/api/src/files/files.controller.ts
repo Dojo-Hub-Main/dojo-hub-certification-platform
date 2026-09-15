@@ -1,4 +1,5 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Post } from '@nestjs/common';
+import { UserRole } from '@dojo-hub/shared';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RequestUser } from '../common/types/request-user.interface';
@@ -19,6 +20,12 @@ export class FilesController {
 
   @Post()
   register(@CurrentUser() user: RequestUser, @Body() dto: RegisterFileDto) {
+    // Lesson reference material is shown to every student on the course, so only an
+    // admin may attach a file to a topic. Without this any signed-in user could plant a
+    // file in a lesson by naming its id.
+    if (dto.topicId && user.role !== UserRole.ADMIN) {
+      throw new ForbiddenException('Only administrators can add files to a lesson.');
+    }
     return this.filesService.register(dto, user.id);
   }
 }

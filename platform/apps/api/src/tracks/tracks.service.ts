@@ -169,9 +169,11 @@ export class TracksService {
             durationSeconds: t.durationSeconds,
             tools: t.tools,
             isFreePreview,
-            // The free lesson keeps its video and captions so it can actually be watched.
+            // The free lesson keeps its video, captions and extra videos/links so it can
+            // actually be judged. Every other lesson's are content you enrol for.
             videoUrl: isFreePreview ? t.videoUrl : null,
             subtitles: isFreePreview ? t.subtitles : [],
+            resources: isFreePreview ? t.resources : [],
             // Never given away: downloadable course material, and the reference cut that
             // exists for evaluators rather than students.
             documents: [],
@@ -356,11 +358,22 @@ export class TracksService {
   // -------------------------------------------------------------------------
 
   async addTopic(actor: RequestUser, moduleId: string, dto: CreateTopicDto) {
-    const count = await this.prisma.topic.count({ where: { moduleId } });
+    // Checked before the topic exists, so a bad document id cannot leave a half-made lesson.
+    if (dto.documentIds?.length) await this.assertAttachableDocuments(dto.documentIds, null);
+
+    // Positioned after the highest lesson in use, not by count: once a lesson has been
+    // deleted the count no longer matches the positions taken, and a new lesson could
+    // land in a slot another one still held.
+    const last = await this.prisma.topic.findFirst({
+      where: { moduleId },
+      orderBy: { order: 'desc' },
+      select: { order: true },
+    });
     const topic = await this.prisma.topic.create({
       data: {
         moduleId,
-        order: count,
+        order: last ? last.order + 1 : 0,
+        resources: (dto.resources ?? []) as unknown as Prisma.InputJsonValue,
         title: dto.title,
         // Optional on the way in, but the columns are non-nullable — see CreateTopicDto.
         description: dto.description ?? '',
@@ -378,6 +391,8 @@ export class TracksService {
       },
     });
 
+    if (dto.documentIds?.length) await this.syncDocuments(topic.id, dto.documentIds);
+
     await this.auditService.log({
       actor,
       action: `Added lesson topic "${topic.title}"`,
@@ -389,15 +404,21 @@ export class TracksService {
   }
 
   async updateTopic(actor: RequestUser, topicId: string, dto: UpdateTopicDto) {
+    // documentIds is not a column — it describes the files to attach — so it is kept out
+    // of the row update and applied separately.
+    const { documentIds, resources, subtitles, ...fields } = dto;
+    if (documentIds) await this.assertAttachableDocuments(documentIds, topicId);
+
     const topic = await this.prisma.topic.update({
       where: { id: topicId },
       data: {
-        ...dto,
-        subtitles: dto.subtitles
-          ? (dto.subtitles as unknown as Prisma.InputJsonValue)
-          : undefined,
+        ...fields,
+        subtitles: subtitles ? (subtitles as unknown as Prisma.InputJsonValue) : undefined,
+        resources: resources ? (resources as unknown as Prisma.InputJsonValue) : undefined,
       },
     });
+
+    if (documentIds) await this.syncDocuments(topicId, documentIds);
     await this.auditService.log({
       actor,
       action: `Updated lesson topic "${topic.title}"`,
@@ -405,6 +426,40 @@ export class TracksService {
       entityId: topic.id,
     });
     return topic;
+  }
+
+  /**
+   * A document can be attached to a lesson only if it is a document upload that belongs
+   * to nothing else — not a student's submission, and not another lesson. Without this, a
+   * known file id could be pulled out of a student's submission and published to a class.
+   */
+  private async assertAttachableDocuments(documentIds: string[], topicId: string | null) {
+    const files = await this.prisma.storedFile.findMany({
+      where: { id: { in: documentIds } },
+      select: { id: true, kind: true, submissionId: true, topicId: true },
+    });
+    const ok = (f: (typeof files)[number]) =>
+      f.kind === 'DOCUMENT' && !f.submissionId && (f.topicId === null || f.topicId === topicId);
+    if (files.length !== new Set(documentIds).size || !files.every(ok)) {
+      throw new BadRequestException('One or more of those documents cannot be attached to this lesson.');
+    }
+  }
+
+  /**
+   * Makes the lesson's reference material exactly the given set: attaches the listed files
+   * and removes any it held that are no longer listed, so an edit that drops a document
+   * actually takes it away from students.
+   */
+  private async syncDocuments(topicId: string, documentIds: string[]) {
+    await this.prisma.$transaction([
+      this.prisma.storedFile.deleteMany({
+        where: { topicId, id: { notIn: documentIds } },
+      }),
+      this.prisma.storedFile.updateMany({
+        where: { id: { in: documentIds } },
+        data: { topicId },
+      }),
+    ]);
   }
 
   async removeTopic(actor: RequestUser, topicId: string) {

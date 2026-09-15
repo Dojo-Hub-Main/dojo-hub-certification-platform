@@ -11,6 +11,12 @@ const ALLOWED_DOCUMENT_TYPES = [
   'application/pdf',
   'application/msword',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  // PowerPoint and Excel — course reference material is as often slides or a
+  // spreadsheet as a PDF, and neither could be uploaded before.
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'application/zip',
   'text/plain',
   'application/json',

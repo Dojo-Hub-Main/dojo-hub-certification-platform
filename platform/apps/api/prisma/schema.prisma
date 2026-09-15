@@ -254,6 +254,9 @@ model Topic {
   referenceVideoUrl String?
   subtitles         Json     @default("[]")
   tools             String[] @default([])
+  /// Extra videos and reference links beyond the lesson's main video, in the order the
+  /// author listed them: [{ title, url, kind: "VIDEO" | "LINK" }].
+  resources         Json     @default("[]")
 
   documents    StoredFile[]
   progress     TopicProgress[]

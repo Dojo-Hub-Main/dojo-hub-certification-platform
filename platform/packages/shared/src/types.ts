@@ -71,13 +71,24 @@ export interface TopicDto {
   referenceVideoUrl?: string | null;
   subtitles: SubtitleCueDto[];
   tools: string[];
+  /** Reference material uploaded for the lesson — PDFs, Word, PowerPoint, spreadsheets. */
   documents: StoredFileDto[];
+  /** Further videos and links beyond the main video, in the author's order. */
+  resources: TopicResourceDto[];
   /**
    * True on the one lesson a course gives away — the first with a video. Set by the API
    * on syllabus responses so the UI knows which lesson to render as playable; every
    * other lesson comes back with videoUrl stripped until the viewer enrols.
    */
   isFreePreview?: boolean;
+}
+
+export type TopicResourceKind = 'VIDEO' | 'LINK';
+
+export interface TopicResourceDto {
+  title: string;
+  url: string;
+  kind: TopicResourceKind;
 }
 
 export interface ModuleDto {

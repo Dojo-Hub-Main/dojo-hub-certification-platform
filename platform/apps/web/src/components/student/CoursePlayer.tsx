@@ -10,6 +10,7 @@ import { useMyEnrollments } from '@/lib/hooks';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
 import { VideoPlayer } from './VideoPlayer';
+import { LessonResources } from './LessonResources';
 import { SubmissionWorkspace } from './SubmissionWorkspace';
 import { SyllabusPanel } from './SyllabusPanel';
 import { AssessmentWizard } from './AssessmentWizard';
@@ -217,6 +218,7 @@ export function CoursePlayer({ trackId }: { trackId: string }) {
                   watched={watchedIds.has(selectedTopic.id)}
                   onWatched={() => markWatched.mutate(selectedTopic.id)}
                 />
+                <LessonResources resources={selectedTopic.resources} documents={selectedTopic.documents} />
                 <SubmissionWorkspace topicId={selectedTopic.id} topicTitle={selectedTopic.title} />
               </>
             ) : selectedTopic.isFreePreview ? (
@@ -224,6 +226,7 @@ export function CoursePlayer({ trackId }: { trackId: string }) {
                  only counts once enrolled — and a nudge to enrol for the rest. */
               <>
                 <VideoPlayer key={selectedTopic.id} topic={selectedTopic} />
+                <LessonResources resources={selectedTopic.resources} />
                 <div className="bg-navy-950 text-white rounded-xl p-5 text-center">
                   <p className="font-bold tracking-tight">That was the free lesson</p>
                   <p className="mt-1 text-sm text-navy-300 max-w-sm mx-auto">
