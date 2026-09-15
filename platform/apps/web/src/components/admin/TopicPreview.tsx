@@ -1,18 +1,20 @@
 'use client';
 
-import { FileText, Clock, VideoOff } from 'lucide-react';
+import { Clock, Pencil, VideoOff } from 'lucide-react';
 import { TrackDto } from '@dojo-hub/shared';
 import { formatDuration, youTubeEmbedUrl, youTubeId } from '@/lib/video';
 import { Badge } from '../ui/Badge';
+import { Button } from '../ui/Button';
 import { LessonResources } from '../student/LessonResources';
 
 type Topic = TrackDto['modules'][number]['topics'][number];
 
 /**
  * Read-only rendering of a saved topic, so an author can confirm what students will
- * actually get — the video plays here exactly as it does in the course player.
+ * actually get — the video, extra videos and links, and reference documents, rendered by
+ * the same component the course player uses.
  */
-export function TopicPreview({ topic }: { topic: Topic }) {
+export function TopicPreview({ topic, onEdit }: { topic: Topic; onEdit?: () => void }) {
   const ytId = youTubeId(topic.videoUrl);
 
   return (
@@ -61,26 +63,18 @@ export function TopicPreview({ topic }: { topic: Topic }) {
         </div>
       )}
 
-      {topic.documents.length > 0 && (
-        <div className="space-y-1">
-          <p className="text-[12px] font-mono uppercase text-navy-400 font-bold">Attached Resources</p>
-          {topic.documents.map((doc) => (
-            <a
-              key={doc.id}
-              href={doc.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-2 text-xs text-navy-700 hover:text-crimson-600"
-            >
-              <FileText className="w-3.5 h-3.5 shrink-0" />
-              <span className="truncate">{doc.originalName}</span>
-            </a>
-          ))}
+      {topic.videoUrl && <p className="text-[12px] font-mono text-navy-300 break-all">{topic.videoUrl}</p>}
+      <div className="max-w-2xl">
+        <LessonResources resources={topic.resources} documents={topic.documents} />
+      </div>
+
+      {onEdit && (
+        <div className="pt-1">
+          <Button size="sm" variant="outline" onClick={onEdit}>
+            <Pencil className="w-3.5 h-3.5" /> Edit this topic
+          </Button>
         </div>
       )}
-
-      {topic.videoUrl && <p className="text-[12px] font-mono text-navy-300 break-all">{topic.videoUrl}</p>}
-      <LessonResources resources={topic.resources} documents={topic.documents} />
     </div>
   );
 }

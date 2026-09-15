@@ -409,6 +409,7 @@ function ModuleDetail({
   const setTools = (v: string) => patch({ tools: v });
   const [editingTopicId, setEditingTopicId] = useState<string | null>(null);
   const [previewTopicId, setPreviewTopicId] = useState<string | null>(null);
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
   const [addTopicError, setAddTopicError] = useState<string | null>(null);
   const [justSavedTitle, setJustSavedTitle] = useState<string | null>(null);
 
@@ -465,12 +466,14 @@ function ModuleDetail({
               onCancel={() => setEditingTopicId(null)}
               onSaved={() => {
                 setEditingTopicId(null);
+                // Show the saved result straight away, so the author can check the change.
+                setPreviewTopicId(topic.id);
                 onChanged();
               }}
             />
           ) : (
             <div key={topic.id} className="bg-white border border-navy-100 rounded-lg overflow-hidden">
-              <div className="flex items-center justify-between px-3 py-2">
+              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 px-3 py-2">
                 <button
                   onClick={() => setPreviewTopicId(previewTopicId === topic.id ? null : topic.id)}
                   aria-expanded={previewTopicId === topic.id}
@@ -485,28 +488,66 @@ function ModuleDetail({
                   />
                   <span className="text-xs text-navy-950 truncate group-hover:text-crimson-600">{topic.title}</span>
                   <span className="text-[12px] text-navy-400 font-mono">{formatDuration(topic.durationSeconds)}</span>
+                  {extrasSummary(topic) && <span className="text-[11px] text-navy-400 truncate">· {extrasSummary(topic)}</span>}
                 </button>
-                <div className="flex items-center gap-3 shrink-0">
+                {/* Labelled rather than icon-only: bare grey icons were easy to miss, and
+                    authors did not realise a saved topic could be previewed or changed. */}
+                <div className="flex items-center gap-1 shrink-0">
                   <button
                     onClick={() => setPreviewTopicId(previewTopicId === topic.id ? null : topic.id)}
-                    aria-label={`${previewTopicId === topic.id ? 'Hide' : 'Show'} preview of topic "${topic.title}"`}
-                    className={cn('hover:text-navy-800', previewTopicId === topic.id ? 'text-crimson-600' : 'text-navy-400')}
+                    aria-expanded={previewTopicId === topic.id}
+                    className={cn(
+                      'inline-flex items-center gap-1 rounded-md px-2 py-1 text-[12px] font-semibold hover:bg-navy-50',
+                      previewTopicId === topic.id ? 'text-crimson-600' : 'text-navy-600 hover:text-navy-950',
+                    )}
                   >
-                    <Eye className="w-3.5 h-3.5" />
+                    <Eye className="w-3.5 h-3.5" /> {previewTopicId === topic.id ? 'Hide preview' : 'Preview'}
                   </button>
                   <button
-                    onClick={() => setEditingTopicId(topic.id)}
-                    aria-label={`Edit topic "${topic.title}"`}
-                    className="text-navy-400 hover:text-navy-800"
+                    onClick={() => {
+                      setConfirmingDeleteId(null);
+                      setEditingTopicId(topic.id);
+                    }}
+                    className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[12px] font-semibold text-navy-600 hover:text-navy-950 hover:bg-navy-50"
                   >
-                    <Pencil className="w-3.5 h-3.5" />
+                    <Pencil className="w-3.5 h-3.5" /> Edit
                   </button>
-                  <button onClick={() => removeTopic.mutate(topic.id)} aria-label={`Delete topic "${topic.title}"`} className="text-navy-400 hover:text-crimson-600">
+                  <button
+                    onClick={() => setConfirmingDeleteId(topic.id)}
+                    aria-label={`Delete topic "${topic.title}"`}
+                    className="rounded-md p-1.5 text-navy-400 hover:text-crimson-600 hover:bg-crimson-50"
+                  >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
               </div>
-              {previewTopicId === topic.id && <TopicPreview topic={topic} />}
+              {/* A topic takes its uploaded documents with it when deleted, so ask first. */}
+              {confirmingDeleteId === topic.id && (
+                <div className="mx-3 mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-crimson-200 bg-crimson-50 px-3 py-2">
+                  <span className="text-xs font-semibold text-crimson-800">
+                    Delete “{topic.title}” and its documents? This can&apos;t be undone.
+                  </span>
+                  <Button
+                    size="sm"
+                    loading={removeTopic.isPending}
+                    onClick={() => removeTopic.mutate(topic.id, { onSuccess: () => setConfirmingDeleteId(null) })}
+                  >
+                    Delete
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => setConfirmingDeleteId(null)}>
+                    Keep
+                  </Button>
+                </div>
+              )}
+              {previewTopicId === topic.id && (
+                <TopicPreview
+                  topic={topic}
+                  onEdit={() => {
+                    setConfirmingDeleteId(null);
+                    setEditingTopicId(topic.id);
+                  }}
+                />
+              )}
             </div>
           ),
         )}
@@ -584,6 +625,17 @@ function ModuleDetail({
       </div>
     </div>
   );
+}
+
+/** "2 documents · 3 links" — what a collapsed topic holds beyond its video, or null if nothing. */
+function extrasSummary(topic: Topic): string | null {
+  const docs = topic.documents?.length ?? 0;
+  const links = topic.resources?.length ?? 0;
+  const parts = [
+    docs ? `${docs} document${docs === 1 ? '' : 's'}` : null,
+    links ? `${links} link${links === 1 ? '' : 's'}` : null,
+  ].filter(Boolean);
+  return parts.length ? parts.join(' · ') : null;
 }
 
 function TopicEditForm({ topic, onCancel, onSaved }: { topic: Topic; onCancel: () => void; onSaved: () => void }) {
