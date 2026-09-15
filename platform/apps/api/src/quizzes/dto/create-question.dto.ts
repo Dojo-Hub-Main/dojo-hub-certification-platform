@@ -2,9 +2,12 @@ import { ApiProperty } from '@nestjs/swagger';
 import { QuizQuestionType } from '@dojo-hub/shared';
 import {
   ArrayMinSize,
+  ArrayUnique,
   IsArray,
+  IsBoolean,
   IsEnum,
   IsInt,
+  IsOptional,
   IsString,
   Min,
   MinLength,
@@ -34,11 +37,32 @@ export class CreateQuestionDto {
   @IsString({ each: true })
   options?: string[];
 
+  /** Students tick every correct option rather than choosing one. */
+  @ApiProperty({ required: false, default: false })
+  @IsOptional()
+  @IsBoolean()
+  allowMultiple?: boolean;
+
   @ApiProperty({ required: false })
-  @ValidateIf(isType(QuizQuestionType.OBJECTIVE))
+  @ValidateIf(
+    (o: CreateQuestionDto) =>
+      o.type === QuizQuestionType.OBJECTIVE && !o.allowMultiple,
+  )
   @IsInt()
   @Min(0)
   correctIndex?: number;
+
+  @ApiProperty({ type: [Number], required: false })
+  @ValidateIf(
+    (o: CreateQuestionDto) =>
+      o.type === QuizQuestionType.OBJECTIVE && !!o.allowMultiple,
+  )
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayUnique()
+  @IsInt({ each: true })
+  @Min(0, { each: true })
+  correctIndices?: number[];
 
   @ApiProperty({ required: false })
   @ValidateIf(isType(QuizQuestionType.OBJECTIVE))

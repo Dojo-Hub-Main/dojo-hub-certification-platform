@@ -80,7 +80,17 @@ export class QuizzesService {
     target: { moduleQuizId?: string; trackAssessmentId?: string },
     dto: CreateQuestionDto,
   ) {
-    this.assertCorrectIndexInRange(dto.options, dto.correctIndex);
+    // A written question has no answer key, so any key fields sent with one are dropped.
+    const { allowMultiple, correctIndex, correctIndices, ...fields } = dto;
+    const answerKey =
+      dto.type === QuizQuestionType.OBJECTIVE
+        ? this.resolveAnswerKey(
+            dto.options ?? [],
+            allowMultiple ?? false,
+            correctIndex,
+            correctIndices,
+          )
+        : { allowMultiple: false, correctIndex: null, correctIndices: [] };
 
     // Next position comes from the highest existing one, not the count. After a delete
     // the count no longer matches the positions in use, so count-based ordering handed
@@ -93,7 +103,8 @@ export class QuizzesService {
     const question = await this.prisma.quizQuestion.create({
       data: {
         ...target,
-        ...dto,
+        ...fields,
+        ...answerKey,
         order: last ? last.order + 1 : 0,
         options: dto.options ?? [],
         sampleKeywords: dto.sampleKeywords ?? [],
@@ -155,15 +166,22 @@ export class QuizzesService {
     if (!existing) throw new NotFoundException('Question not found.');
 
     // Validate against the question as it will be after the edit, not just the fields
-    // sent. Removing an option can leave the stored correct answer pointing past the end.
-    this.assertCorrectIndexInRange(
-      dto.options ?? existing.options,
-      dto.correctIndex ?? existing.correctIndex ?? undefined,
-    );
+    // sent. Removing an option can leave a stored correct answer pointing past the end,
+    // and switching between one and several correct answers needs the matching key.
+    const { allowMultiple, correctIndex, correctIndices, ...fields } = dto;
+    const answerKey =
+      existing.type === QuizQuestionType.OBJECTIVE
+        ? this.resolveAnswerKey(
+            dto.options ?? existing.options,
+            allowMultiple ?? existing.allowMultiple,
+            correctIndex ?? existing.correctIndex,
+            correctIndices ?? existing.correctIndices,
+          )
+        : {};
 
     const question = await this.prisma.quizQuestion.update({
       where: { id: questionId },
-      data: dto,
+      data: { ...fields, ...answerKey },
     });
 
     await this.auditService.log({
@@ -234,17 +252,60 @@ export class QuizzesService {
     }
   }
 
-  /** A multiple-choice answer that points at an option that does not exist can never be scored correct. */
-  private assertCorrectIndexInRange(
-    options: string[] | undefined,
-    correctIndex: number | undefined,
-  ) {
-    if (options === undefined || correctIndex === undefined) return;
-    if (correctIndex >= options.length) {
+  /**
+   * The stored answer key for a multiple-choice question. Exactly one of the two keys is
+   * kept — correctIndex for one correct answer, correctIndices for several — so marking
+   * never has to guess which applies. An answer pointing at an option that does not
+   * exist could never be scored correct, so that is refused here.
+   */
+  private resolveAnswerKey(
+    options: string[],
+    allowMultiple: boolean,
+    correctIndex: number | null | undefined,
+    correctIndices: number[] | undefined,
+  ): { allowMultiple: boolean; correctIndex: number | null; correctIndices: number[] } {
+    const inRange = (i: number) => Number.isInteger(i) && i >= 0 && i < options.length;
+
+    if (allowMultiple) {
+      const key = [...new Set(correctIndices ?? [])].sort((a, b) => a - b);
+      if (key.length === 0) {
+        throw new BadRequestException('Tick at least one correct option.');
+      }
+      if (!key.every(inRange)) {
+        throw new BadRequestException(
+          'Every correct answer must be one of the options provided.',
+        );
+      }
+      return { allowMultiple: true, correctIndex: null, correctIndices: key };
+    }
+
+    if (correctIndex === null || correctIndex === undefined) {
+      throw new BadRequestException('Mark which option is correct.');
+    }
+    if (!inRange(correctIndex)) {
       throw new BadRequestException(
         'The correct answer must be one of the options provided.',
       );
     }
+    return { allowMultiple: false, correctIndex, correctIndices: [] };
+  }
+
+  /**
+   * One correct answer: the chosen option must be it. Several: all-or-nothing — the
+   * student must tick every correct option and no others, the same rule LinkedIn Learning
+   * and most course platforms use, so ticking everything can never score.
+   */
+  private static isAnsweredCorrectly(
+    q: { allowMultiple: boolean; correctIndex: number | null; correctIndices: number[] },
+    selected: unknown,
+  ): boolean {
+    if (!q.allowMultiple) return selected === q.correctIndex;
+    if (!Array.isArray(selected)) return false;
+    const ticked = new Set(selected);
+    return (
+      ticked.size === q.correctIndices.length &&
+      q.correctIndices.every((i) => ticked.has(i))
+    );
   }
 
   // -------------------------------------------------------------------------
@@ -287,6 +348,7 @@ export class QuizzesService {
       id: string;
       type: QuizQuestionType;
       correctIndex: number | null;
+      correctIndices: number[];
       explanation: string | null;
     },
     T extends {
@@ -300,7 +362,7 @@ export class QuizzesService {
     // via perQuestionResults, but sending it with the questions put it in the browser
     // before the student answered — and an explanation usually names the right option.
     const stripped = quiz.questions.map(
-      ({ correctIndex, explanation, ...rest }) => rest,
+      ({ correctIndex, correctIndices, explanation, ...rest }) => rest,
     );
     return {
       id: quiz.id,
@@ -345,8 +407,10 @@ export class QuizzesService {
 
     let objectiveScore = 0;
     const perQuestionResults = objectiveQuestions.map((q) => {
-      const selected = dto.objectiveAnswers[q.id];
-      const correct = selected === q.correctIndex;
+      const correct = QuizzesService.isAnsweredCorrectly(
+        q,
+        dto.objectiveAnswers[q.id],
+      );
       if (correct) objectiveScore += 1;
       return { questionId: q.id, correct, explanation: q.explanation ?? '' };
     });

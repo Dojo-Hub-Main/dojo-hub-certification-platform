@@ -315,6 +315,10 @@ model QuizQuestion {
   question     String?
   options      String[] @default([])
   correctIndex Int?
+  /// True when students tick every correct option instead of choosing one. The answer
+  /// key is then correctIndices, and correctIndex stays null.
+  allowMultiple  Boolean @default(false)
+  correctIndices Int[]   @default([])
   explanation  String?
 
   // Subjective

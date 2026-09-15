@@ -117,7 +117,10 @@ export interface QuizQuestionAdminDto {
   order: number;
   question: string | null;
   options: string[];
+  /** When true the answer key is correctIndices and correctIndex is null. */
+  allowMultiple: boolean;
   correctIndex: number | null;
+  correctIndices: number[];
   explanation: string | null;
   prompt: string | null;
   guidelines: string | null;
@@ -201,6 +204,8 @@ export interface QuizQuestionPublicDto {
   type: QuizQuestionType;
   question: string;
   options?: string[];
+  /** Students tick every correct option; answer with an array of option indices. */
+  allowMultiple?: boolean;
   prompt?: string;
   guidelines?: string;
   sampleKeywords?: string[];

@@ -9,11 +9,12 @@ import {
 
 export class SubmitAttemptDto {
   @ApiProperty({
-    description: 'Map of questionId -> selected option index',
+    description:
+      'Map of questionId -> selected option index, or an array of indices for a question with multiple correct answers',
     type: Object,
   })
   @IsObject()
-  objectiveAnswers: Record<string, number>;
+  objectiveAnswers: Record<string, number | number[]>;
 
   @ApiProperty({ required: false })
   @IsOptional()

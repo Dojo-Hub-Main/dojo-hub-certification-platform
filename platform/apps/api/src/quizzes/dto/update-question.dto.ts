@@ -1,7 +1,9 @@
 import { ApiProperty } from '@nestjs/swagger';
 import {
   ArrayMinSize,
+  ArrayUnique,
   IsArray,
+  IsBoolean,
   IsInt,
   IsOptional,
   IsString,
@@ -34,6 +36,21 @@ export class UpdateQuestionDto {
   @IsInt()
   @Min(0)
   correctIndex?: number;
+
+  /** Switching this changes which answer key applies; send the matching key with it. */
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsBoolean()
+  allowMultiple?: boolean;
+
+  @ApiProperty({ type: [Number], required: false })
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayUnique()
+  @IsInt({ each: true })
+  @Min(0, { each: true })
+  correctIndices?: number[];
 
   @ApiProperty({ required: false })
   @IsOptional()

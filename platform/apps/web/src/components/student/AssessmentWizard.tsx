@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, XCircle, Clock, Sparkles, Users } from 'lucide-react';
+import { Check, CheckCircle2, XCircle, Clock, Sparkles, Users } from 'lucide-react';
 import { AttemptTargetType, QuizDto, QuizGradeResultDto } from '@dojo-hub/shared';
 import { api, ApiError } from '@/lib/api-client';
 import { Button } from '../ui/Button';
@@ -26,7 +26,8 @@ export function AssessmentWizard({
 
   const [step, setStep] = useState<Step>('intro');
   const [qIndex, setQIndex] = useState(0);
-  const [objectiveAnswers, setObjectiveAnswers] = useState<Record<string, number>>({});
+  // One option index per question, or an array of them where several answers are correct.
+  const [objectiveAnswers, setObjectiveAnswers] = useState<Record<string, number | number[]>>({});
   const [subjectiveText, setSubjectiveText] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<QuizGradeResultDto | null>(null);
@@ -61,6 +62,21 @@ export function AssessmentWizard({
 
   const objectiveQuestions = quiz.objectiveQuestions;
   const currentQuestion = objectiveQuestions[qIndex];
+  const isMulti = !!currentQuestion?.allowMultiple;
+  const currentAnswer = currentQuestion ? objectiveAnswers[currentQuestion.id] : undefined;
+  const isChosen = (idx: number) => (Array.isArray(currentAnswer) ? currentAnswer.includes(idx) : currentAnswer === idx);
+  const hasAnswered = Array.isArray(currentAnswer) ? currentAnswer.length > 0 : currentAnswer !== undefined;
+
+  const choose = (idx: number) => {
+    if (!currentQuestion) return;
+    if (!isMulti) {
+      setObjectiveAnswers({ ...objectiveAnswers, [currentQuestion.id]: idx });
+      return;
+    }
+    const ticked = Array.isArray(currentAnswer) ? currentAnswer : [];
+    const next = ticked.includes(idx) ? ticked.filter((i) => i !== idx) : [...ticked, idx].sort((a, b) => a - b);
+    setObjectiveAnswers({ ...objectiveAnswers, [currentQuestion.id]: next });
+  };
 
   return (
     <Modal open onClose={onClose} title={quiz.title} maxWidth="max-w-2xl">
@@ -108,20 +124,35 @@ export function AssessmentWizard({
             Question {qIndex + 1} of {objectiveQuestions.length}
           </p>
           <p className="text-sm font-bold text-navy-950">{currentQuestion.question}</p>
-          <div className="space-y-2">
-            {currentQuestion.options?.map((opt, idx) => (
-              <button
-                key={idx}
-                onClick={() => setObjectiveAnswers({ ...objectiveAnswers, [currentQuestion.id]: idx })}
-                className={`w-full text-left px-4 py-2.5 rounded-xl border text-xs transition-colors ${
-                  objectiveAnswers[currentQuestion.id] === idx
-                    ? 'border-crimson-500 bg-crimson-50 font-semibold text-crimson-700'
-                    : 'border-navy-200 hover:bg-navy-50'
-                }`}
-              >
-                {opt}
-              </button>
-            ))}
+          {isMulti && <p className="text-xs font-semibold text-navy-500 -mt-2">Select all that apply.</p>}
+          <div className="space-y-2" role={isMulti ? 'group' : 'radiogroup'} aria-label={currentQuestion.question}>
+            {currentQuestion.options?.map((opt, idx) => {
+              const chosen = isChosen(idx);
+              return (
+                <button
+                  key={idx}
+                  type="button"
+                  role={isMulti ? 'checkbox' : 'radio'}
+                  aria-checked={chosen}
+                  onClick={() => choose(idx)}
+                  className={`w-full flex items-center gap-3 text-left px-4 py-2.5 rounded-xl border text-xs transition-colors ${
+                    chosen ? 'border-crimson-500 bg-crimson-50 font-semibold text-crimson-700' : 'border-navy-200 hover:bg-navy-50'
+                  }`}
+                >
+                  {/* Square boxes for tick-all questions, round ones for pick-one, so the
+                      difference is visible before the student reads the instruction. */}
+                  <span
+                    aria-hidden
+                    className={`w-4 h-4 shrink-0 border-2 flex items-center justify-center ${isMulti ? 'rounded' : 'rounded-full'} ${
+                      chosen ? 'border-crimson-600 bg-crimson-600' : 'border-navy-300 bg-white'
+                    }`}
+                  >
+                    {chosen && (isMulti ? <Check className="w-2.5 h-2.5 text-white" strokeWidth={3} /> : <span className="w-1.5 h-1.5 rounded-full bg-white" />)}
+                  </span>
+                  <span>{opt}</span>
+                </button>
+              );
+            })}
           </div>
           <div className="flex justify-between pt-2">
             <Button variant="outline" size="sm" disabled={qIndex === 0} onClick={() => setQIndex(qIndex - 1)}>
@@ -129,7 +160,7 @@ export function AssessmentWizard({
             </Button>
             <Button
               size="sm"
-              disabled={objectiveAnswers[currentQuestion.id] === undefined}
+              disabled={!hasAnswered}
               onClick={() => {
                 if (qIndex < objectiveQuestions.length - 1) setQIndex(qIndex + 1);
                 else setStep(quiz.subjectiveQuestion ? 'subjective' : 'objective-done');
@@ -231,6 +262,9 @@ export function AssessmentWizard({
                 <p className="font-semibold">
                   Question {i + 1}: {r.correct ? 'Correct' : 'Incorrect'}
                 </p>
+                {!r.correct && objectiveQuestions.find((q) => q.id === r.questionId)?.allowMultiple && (
+                  <p className="text-navy-600 mt-0.5">This question needed every correct option ticked, and no others.</p>
+                )}
                 <p className="text-navy-500 mt-0.5">{r.explanation}</p>
               </div>
             ))}

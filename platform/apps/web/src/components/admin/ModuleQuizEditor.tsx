@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, HelpCircle, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { Check, CheckCircle2, HelpCircle, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { ModuleDto, QuizQuestionAdminDto } from '@dojo-hub/shared';
 import { api, ApiError } from '@/lib/api-client';
 import { Button } from '@/components/ui/Button';
@@ -16,17 +16,32 @@ import { Badge } from '@/components/ui/Badge';
  * one once it has at least one question — the API reports an empty quiz as absent.
  */
 
-type Draft = { question: string; options: string[]; correctIndex: number; explanation: string };
+type Draft = {
+  question: string;
+  options: string[];
+  /** Several options can be correct and students tick each one. */
+  allowMultiple: boolean;
+  correctIndex: number;
+  correctIndices: number[];
+  explanation: string;
+};
 
-const BLANK: Draft = { question: '', options: ['', ''], correctIndex: 0, explanation: '' };
+const BLANK: Draft = { question: '', options: ['', ''], allowMultiple: false, correctIndex: 0, correctIndices: [], explanation: '' };
 
 function toDraft(q: QuizQuestionAdminDto): Draft {
   return {
     question: q.question ?? '',
     options: q.options.length >= 2 ? [...q.options] : [...q.options, ...Array(2 - q.options.length).fill('')],
+    allowMultiple: q.allowMultiple ?? false,
     correctIndex: q.correctIndex ?? 0,
+    correctIndices: q.correctIndices ?? [],
     explanation: q.explanation ?? '',
   };
+}
+
+/** Whether option i is marked correct on a saved question, whichever answer type it uses. */
+function isCorrectOption(q: QuizQuestionAdminDto, i: number): boolean {
+  return q.allowMultiple ? (q.correctIndices ?? []).includes(i) : i === q.correctIndex;
 }
 
 /**
@@ -38,7 +53,11 @@ function validationMessage(d: Draft): string | null {
   if (d.question.trim().length < 5) return 'Write a question of at least 5 characters.';
   if (d.options.length < 2) return 'Add at least two options.';
   if (d.options.some((o) => o.trim().length === 0)) return 'Fill in every option, or remove the empty ones.';
-  if (d.correctIndex >= d.options.length) return 'Mark which option is correct.';
+  if (d.allowMultiple) {
+    if (d.correctIndices.length === 0) return 'Tick every option that is correct.';
+  } else if (d.correctIndex >= d.options.length) {
+    return 'Mark which option is correct.';
+  }
   if (d.explanation.trim().length < 5) return 'Add an explanation of at least 5 characters.';
   return null;
 }
@@ -71,7 +90,11 @@ export function ModuleQuizEditor({ mod, trackId }: { mod: ModuleDto; trackId: st
   const payload = () => ({
     question: draft.question.trim(),
     options: draft.options.map((o) => o.trim()),
-    correctIndex: draft.correctIndex,
+    allowMultiple: draft.allowMultiple,
+    // Only the key for the chosen answer type is sent; the API clears the other.
+    ...(draft.allowMultiple
+      ? { correctIndices: [...draft.correctIndices].sort((a, b) => a - b) }
+      : { correctIndex: draft.correctIndex }),
     explanation: draft.explanation.trim(),
   });
 
@@ -168,23 +191,72 @@ export function ModuleQuizEditor({ mod, trackId }: { mod: ModuleDto; trackId: st
         onChange={(e) => setDraft({ ...draft, question: e.target.value })}
       />
 
+      <div className="space-y-1.5">
+        <p className="text-[11px] font-mono uppercase tracking-wider text-navy-500">Answer type</p>
+        <div role="radiogroup" aria-label="Answer type" className="inline-flex rounded-lg border border-navy-200 bg-white p-0.5">
+          {[
+            { multi: false, label: 'One correct answer' },
+            { multi: true, label: 'Multiple correct answers' },
+          ].map(({ multi, label }) => (
+            <button
+              key={label}
+              type="button"
+              role="radio"
+              aria-checked={draft.allowMultiple === multi}
+              onClick={() => {
+                if (draft.allowMultiple === multi) return;
+                // Carry the marked answer across so switching type never loses it.
+                setDraft(
+                  multi
+                    ? { ...draft, allowMultiple: true, correctIndices: [draft.correctIndex] }
+                    : { ...draft, allowMultiple: false, correctIndex: [...draft.correctIndices].sort((a, b) => a - b)[0] ?? 0 },
+                );
+              }}
+              className={
+                draft.allowMultiple === multi
+                  ? 'px-3 py-1.5 rounded-md text-xs font-bold bg-navy-950 text-white'
+                  : 'px-3 py-1.5 rounded-md text-xs font-semibold text-navy-600 hover:text-navy-950'
+              }
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="space-y-2">
         <p className="text-[11px] font-mono uppercase tracking-wider text-navy-500">
-          Options — click the circle beside the correct answer
+          {draft.allowMultiple
+            ? 'Options — tick every correct answer'
+            : 'Options — click the circle beside the correct answer'}
         </p>
-        {draft.options.map((opt, i) => (
+        {draft.options.map((opt, i) => {
+          const marked = draft.allowMultiple ? draft.correctIndices.includes(i) : draft.correctIndex === i;
+          const shape = draft.allowMultiple ? 'rounded' : 'rounded-full';
+          return (
           <div key={i} className="flex items-center gap-2">
             <button
               type="button"
+              role={draft.allowMultiple ? 'checkbox' : 'radio'}
+              aria-checked={marked}
               aria-label={'Mark option ' + (i + 1) + ' as correct'}
-              onClick={() => setDraft({ ...draft, correctIndex: i })}
+              onClick={() =>
+                setDraft(
+                  draft.allowMultiple
+                    ? {
+                        ...draft,
+                        correctIndices: marked ? draft.correctIndices.filter((c) => c !== i) : [...draft.correctIndices, i],
+                      }
+                    : { ...draft, correctIndex: i },
+                )
+              }
               className={
-                draft.correctIndex === i
-                  ? 'w-5 h-5 rounded-full border-2 shrink-0 flex items-center justify-center border-green-600 bg-green-600'
-                  : 'w-5 h-5 rounded-full border-2 shrink-0 flex items-center justify-center border-navy-300 hover:border-navy-500'
+                marked
+                  ? `w-5 h-5 ${shape} border-2 shrink-0 flex items-center justify-center border-green-600 bg-green-600`
+                  : `w-5 h-5 ${shape} border-2 shrink-0 flex items-center justify-center border-navy-300 hover:border-navy-500`
               }
             >
-              {draft.correctIndex === i && <CheckCircle2 className="w-3 h-3 text-white" />}
+              {marked && (draft.allowMultiple ? <Check className="w-3 h-3 text-white" strokeWidth={3} /> : <CheckCircle2 className="w-3 h-3 text-white" />)}
             </button>
             <input
               className="input text-sm py-2"
@@ -202,11 +274,12 @@ export function ModuleQuizEditor({ mod, trackId }: { mod: ModuleDto; trackId: st
                 aria-label={'Remove option ' + (i + 1)}
                 onClick={() => {
                   const options = draft.options.filter((_, oi) => oi !== i);
-                  // Keep the mark on the same option when an earlier one is removed.
+                  // Keep the marks on the same options when an earlier one is removed.
                   let correctIndex = draft.correctIndex;
                   if (i < correctIndex) correctIndex -= 1;
                   else if (i === correctIndex) correctIndex = 0;
-                  setDraft({ ...draft, options, correctIndex });
+                  const correctIndices = draft.correctIndices.filter((c) => c !== i).map((c) => (c > i ? c - 1 : c));
+                  setDraft({ ...draft, options, correctIndex, correctIndices });
                 }}
                 className="p-1.5 text-navy-400 hover:text-crimson-600 shrink-0"
               >
@@ -214,7 +287,8 @@ export function ModuleQuizEditor({ mod, trackId }: { mod: ModuleDto; trackId: st
               </button>
             )}
           </div>
-        ))}
+          );
+        })}
         <button
           type="button"
           onClick={() => setDraft({ ...draft, options: [...draft.options, ''] })}
@@ -339,19 +413,26 @@ export function ModuleQuizEditor({ mod, trackId }: { mod: ModuleDto; trackId: st
             <li key={q.id} className="px-4 py-3 flex items-start gap-3">
               <span className="text-[11px] font-mono text-navy-400 mt-0.5 shrink-0 tabular-nums">{i + 1}</span>
               <div className="min-w-0 flex-1">
-                <p className="text-sm text-navy-950">{q.question ?? q.prompt}</p>
+                <p className="text-sm text-navy-950">
+                  {q.question ?? q.prompt}
+                  {q.allowMultiple && (
+                    <span className="ml-2 align-middle">
+                      <Badge tone="gray">Multiple answers</Badge>
+                    </span>
+                  )}
+                </p>
                 {q.type === 'OBJECTIVE' && (
                   <ul className="mt-1.5 space-y-0.5">
                     {q.options.map((opt, oi) => (
                       <li
                         key={oi}
                         className={
-                          oi === q.correctIndex
+                          isCorrectOption(q, oi)
                             ? 'text-xs flex items-center gap-1.5 text-green-700 font-semibold'
                             : 'text-xs flex items-center gap-1.5 text-navy-500'
                         }
                       >
-                        {oi === q.correctIndex ? <CheckCircle2 className="w-3 h-3 shrink-0" /> : <span className="w-3 shrink-0" />}
+                        {isCorrectOption(q, oi) ? <CheckCircle2 className="w-3 h-3 shrink-0" /> : <span className="w-3 shrink-0" />}
                         {opt}
                       </li>
                     ))}

@@ -539,8 +539,11 @@ export class TracksService {
    * GET /quizzes/modules/:moduleId when a student actually opens it.
    */
   private stripAnswerKeys(track: FullTrack) {
-    const strip = <Q extends { correctIndex: number | null }>({
+    const strip = <
+      Q extends { correctIndex: number | null; correctIndices: number[] },
+    >({
       correctIndex,
+      correctIndices,
       ...rest
     }: Q) => rest;
     return {
