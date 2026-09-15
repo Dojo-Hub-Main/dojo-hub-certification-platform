@@ -33,10 +33,12 @@ const FULL_TRACK_INCLUDE = {
         include: { documents: true },
       },
       competencies: true,
-      quiz: { include: { questions: true } },
+      // Ordered, so the admin editor lists questions in the same sequence students
+      // answer them in. Unordered, the database was free to return them any way round.
+      quiz: { include: { questions: { orderBy: { order: 'asc' as const } } } },
     },
   },
-  assessment: { include: { questions: true } },
+  assessment: { include: { questions: { orderBy: { order: 'asc' as const } } } },
 } satisfies Prisma.TrackInclude;
 
 type FullTrack = Prisma.TrackGetPayload<{ include: typeof FULL_TRACK_INCLUDE }>;
@@ -154,7 +156,7 @@ export class TracksService {
       hasAssessment: !!assessment,
       modules: track.modules.map(({ quiz, ...m }) => ({
         ...m,
-        hasQuiz: !!quiz,
+        hasQuiz: (quiz?.questions.length ?? 0) > 0,
         quizQuestionCount: quiz?.questions.length ?? 0,
         topics: m.topics.map((t) => {
           const isFreePreview = t.id === freeTopicId;
@@ -492,7 +494,7 @@ export class TracksService {
         const { quiz, ...rest } = m;
         return {
           ...rest,
-          hasQuiz: !!quiz,
+          hasQuiz: (quiz?.questions.length ?? 0) > 0,
           quizQuestionCount: quiz?.questions.length ?? 0,
         };
       }),

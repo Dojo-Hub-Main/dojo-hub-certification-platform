@@ -34,6 +34,7 @@ export function SyllabusPanel({
   onSelectModule,
   onOpenQuiz,
   onOpenAssessment,
+  canTakeQuizzes = true,
 }: {
   track: TrackDto;
   watchedTopicIds: Set<string>;
@@ -44,6 +45,8 @@ export function SyllabusPanel({
   onSelectModule: (moduleId: string) => void;
   onOpenQuiz: (moduleId: string) => void;
   onOpenAssessment: () => void;
+  /** False before enrolment — quizzes are part of what enrolling unlocks, like the lessons. */
+  canTakeQuizzes?: boolean;
 }) {
   return (
     <div className="bg-white rounded-2xl border border-navy-200 divide-y divide-navy-100 overflow-hidden">
@@ -141,7 +144,7 @@ export function SyllabusPanel({
                   </button>
                 );
               })}
-              {mod.quizEnabled && mod.hasQuiz && (
+              {canTakeQuizzes && mod.quizEnabled && mod.hasQuiz && (
                 <button
                   onClick={() => onOpenQuiz(mod.id)}
                   className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-navy-50 transition-colors bg-navy-100/40"

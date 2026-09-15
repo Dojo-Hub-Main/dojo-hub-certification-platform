@@ -53,8 +53,8 @@ export function AssessmentWizard({
 
   if (isLoading || !quiz) {
     return (
-      <Modal open onClose={onClose} title="Loading Assessment..." maxWidth="max-w-2xl">
-        <div className="py-12 text-center text-sm text-navy-400 animate-pulse">Preparing your workstation...</div>
+      <Modal open onClose={onClose} title="Loading quiz…" maxWidth="max-w-2xl">
+        <div className="py-12 text-center text-sm text-navy-400 animate-pulse">Loading questions…</div>
       </Modal>
     );
   }
@@ -67,22 +67,37 @@ export function AssessmentWizard({
       {step === 'intro' && (
         <div className="space-y-4">
           <p className="text-sm text-navy-600">
-            This assessment includes {objectiveQuestions.length} objective question{objectiveQuestions.length !== 1 && 's'}
-            {quiz.subjectiveQuestion && ' and one case-study written response'}.
+            This quiz has {objectiveQuestions.length} objective question{objectiveQuestions.length !== 1 && 's'}
+            {quiz.subjectiveQuestion && ' and one written answer'}.
           </p>
           <div className="bg-navy-50 rounded-xl border border-navy-200 p-4 text-xs space-y-1.5">
-            <p>
-              <span className="font-bold">Weighted scoring:</span> Objective 40% / Subjective 60%
-            </p>
-            <p>
-              <span className="font-bold">Pass threshold:</span> {quiz.passThreshold}% weighted average
-            </p>
+            {/* Weighting only exists when there is a written answer to weigh against. Quizzes
+                built in the admin panel are multiple choice only, so stating a 40/60 split
+                told every student something untrue about how they would be marked. */}
+            {quiz.subjectiveQuestion ? (
+              <>
+                <p>
+                  <span className="font-bold">Scoring:</span> multiple choice 40% / written answer 60%
+                </p>
+                <p>
+                  <span className="font-bold">Pass mark:</span> {quiz.passThreshold}% overall
+                </p>
+              </>
+            ) : (
+              <p>
+                <span className="font-bold">Pass mark:</span> {quiz.passThreshold}% of questions correct
+              </p>
+            )}
             <p>
               <span className="font-bold">Note:</span> this is an optional self-check — it doesn&apos;t affect your certification progress.
             </p>
           </div>
-          <Button className="w-full" onClick={() => setStep('objective')}>
-            Begin Assessment
+          <Button
+            className="w-full"
+            disabled={objectiveQuestions.length === 0 && !quiz.subjectiveQuestion}
+            onClick={() => setStep(objectiveQuestions.length > 0 ? 'objective' : 'subjective')}
+          >
+            Start quiz
           </Button>
         </div>
       )}
@@ -222,7 +237,7 @@ export function AssessmentWizard({
           </div>
 
           <Button className="w-full" variant="dark" onClick={onClose}>
-            Close Workstation
+            Close
           </Button>
         </div>
       )}

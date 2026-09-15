@@ -23,6 +23,7 @@ import {
   CreateTrackAssessmentDto,
 } from './dto/create-quiz.dto';
 import { CreateQuestionDto } from './dto/create-question.dto';
+import { UpdateModuleQuizDto, UpdateQuestionDto } from './dto/update-question.dto';
 import { SubmitAttemptDto } from './dto/submit-attempt.dto';
 import { GradeAttemptDto } from './dto/grade-attempt.dto';
 
@@ -79,12 +80,21 @@ export class QuizzesService {
     target: { moduleQuizId?: string; trackAssessmentId?: string },
     dto: CreateQuestionDto,
   ) {
-    const count = await this.prisma.quizQuestion.count({ where: target });
+    this.assertCorrectIndexInRange(dto.options, dto.correctIndex);
+
+    // Next position comes from the highest existing one, not the count. After a delete
+    // the count no longer matches the positions in use, so count-based ordering handed
+    // a new question a slot another question already held.
+    const last = await this.prisma.quizQuestion.findFirst({
+      where: target,
+      orderBy: { order: 'desc' },
+      select: { order: true },
+    });
     const question = await this.prisma.quizQuestion.create({
       data: {
         ...target,
         ...dto,
-        order: count,
+        order: last ? last.order + 1 : 0,
         options: dto.options ?? [],
         sampleKeywords: dto.sampleKeywords ?? [],
       },
@@ -99,7 +109,24 @@ export class QuizzesService {
   }
 
   async removeQuestion(actor: RequestUser, questionId: string) {
-    await this.prisma.quizQuestion.delete({ where: { id: questionId } });
+    const removed = await this.prisma.quizQuestion.findUnique({
+      where: { id: questionId },
+    });
+    if (!removed) throw new NotFoundException('Question not found.');
+
+    // Delete and renumber together, so the remaining questions stay numbered 0..n-1
+    // with no gap where this one was.
+    await this.prisma.$transaction([
+      this.prisma.quizQuestion.delete({ where: { id: questionId } }),
+      this.prisma.quizQuestion.updateMany({
+        where: {
+          moduleQuizId: removed.moduleQuizId,
+          trackAssessmentId: removed.trackAssessmentId,
+          order: { gt: removed.order },
+        },
+        data: { order: { decrement: 1 } },
+      }),
+    ]);
     await this.auditService.log({
       actor,
       action: 'Removed a quiz question',
@@ -108,6 +135,116 @@ export class QuizzesService {
       severity: AuditLogSeverity.WARNING,
     });
     return { success: true };
+  }
+
+  /**
+   * Edits a saved question. Only the fields sent are changed.
+   *
+   * Scores already recorded are left alone: an attempt stores its score at the moment it
+   * was graded, so editing a question changes what future students see without rewriting
+   * the result of anyone who has already taken it.
+   */
+  async updateQuestion(
+    actor: RequestUser,
+    questionId: string,
+    dto: UpdateQuestionDto,
+  ) {
+    const existing = await this.prisma.quizQuestion.findUnique({
+      where: { id: questionId },
+    });
+    if (!existing) throw new NotFoundException('Question not found.');
+
+    // Validate against the question as it will be after the edit, not just the fields
+    // sent. Removing an option can leave the stored correct answer pointing past the end.
+    this.assertCorrectIndexInRange(
+      dto.options ?? existing.options,
+      dto.correctIndex ?? existing.correctIndex ?? undefined,
+    );
+
+    const question = await this.prisma.quizQuestion.update({
+      where: { id: questionId },
+      data: dto,
+    });
+
+    await this.auditService.log({
+      actor,
+      action: 'Edited a quiz question',
+      entityType: 'QuizQuestion',
+      entityId: questionId,
+    });
+    return question;
+  }
+
+  async updateModuleQuiz(
+    actor: RequestUser,
+    quizId: string,
+    dto: UpdateModuleQuizDto,
+  ) {
+    const quiz = await this.prisma.moduleQuiz.update({
+      where: { id: quizId },
+      data: dto,
+    });
+    await this.auditService.log({
+      actor,
+      action: `Updated chapter quiz "${quiz.title}"`,
+      entityType: 'ModuleQuiz',
+      entityId: quizId,
+    });
+    return quiz;
+  }
+
+  /**
+   * A quiz belongs to a course, and lessons in a course are locked until the student
+   * enrols. Without this, anyone signed in could sit a course's quizzes without joining it.
+   * A module quiz that an admin has hidden is also closed to new attempts, not just
+   * removed from the syllabus.
+   */
+  private async assertCanAttempt(
+    actor: RequestUser,
+    type: AttemptTargetType,
+    targetId: string,
+  ) {
+    let trackId: string;
+
+    if (type === AttemptTargetType.MODULE_QUIZ) {
+      const quiz = await this.prisma.moduleQuiz.findUnique({
+        where: { id: targetId },
+        include: { module: { select: { trackId: true, quizEnabled: true } } },
+      });
+      if (!quiz) throw new NotFoundException('Quiz not found.');
+      if (!quiz.module.quizEnabled) {
+        throw new BadRequestException('This quiz is not currently available.');
+      }
+      trackId = quiz.module.trackId;
+    } else {
+      const assessment = await this.prisma.trackAssessment.findUnique({
+        where: { id: targetId },
+        select: { trackId: true },
+      });
+      if (!assessment) throw new NotFoundException('Assessment not found.');
+      trackId = assessment.trackId;
+    }
+
+    const enrolment = await this.prisma.enrollment.findUnique({
+      where: { userId_trackId: { userId: actor.id, trackId } },
+      select: { id: true },
+    });
+    if (!enrolment) {
+      throw new BadRequestException('Enrol in this course to take its quizzes.');
+    }
+  }
+
+  /** A multiple-choice answer that points at an option that does not exist can never be scored correct. */
+  private assertCorrectIndexInRange(
+    options: string[] | undefined,
+    correctIndex: number | undefined,
+  ) {
+    if (options === undefined || correctIndex === undefined) return;
+    if (correctIndex >= options.length) {
+      throw new BadRequestException(
+        'The correct answer must be one of the options provided.',
+      );
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -150,6 +287,7 @@ export class QuizzesService {
       id: string;
       type: QuizQuestionType;
       correctIndex: number | null;
+      explanation: string | null;
     },
     T extends {
       id: string;
@@ -158,7 +296,12 @@ export class QuizzesService {
       questions: Q[];
     },
   >(quiz: T, targetType: AttemptTargetType, targetId: string) {
-    const stripped = quiz.questions.map(({ correctIndex, ...rest }) => rest);
+    // The explanation is withheld as well as the answer key. It is shown after marking,
+    // via perQuestionResults, but sending it with the questions put it in the browser
+    // before the student answered — and an explanation usually names the right option.
+    const stripped = quiz.questions.map(
+      ({ correctIndex, explanation, ...rest }) => rest,
+    );
     return {
       id: quiz.id,
       targetType,
@@ -183,6 +326,8 @@ export class QuizzesService {
     targetId: string,
     dto: SubmitAttemptDto,
   ) {
+    await this.assertCanAttempt(actor, type, targetId);
+
     const questions = await this.prisma.quizQuestion.findMany({
       where:
         type === AttemptTargetType.MODULE_QUIZ

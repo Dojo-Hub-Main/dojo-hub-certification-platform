@@ -18,6 +18,7 @@ import {
   CreateTrackAssessmentDto,
 } from './dto/create-quiz.dto';
 import { CreateQuestionDto } from './dto/create-question.dto';
+import { UpdateModuleQuizDto, UpdateQuestionDto } from './dto/update-question.dto';
 import { SubmitAttemptDto } from './dto/submit-attempt.dto';
 import { GradeAttemptDto } from './dto/grade-attempt.dto';
 
@@ -83,6 +84,26 @@ export class QuizzesController {
       { trackAssessmentId: assessmentId },
       dto,
     );
+  }
+
+  @Roles(UserRole.ADMIN)
+  @Patch('questions/:questionId')
+  updateQuestion(
+    @CurrentUser() actor: RequestUser,
+    @Param('questionId') questionId: string,
+    @Body() dto: UpdateQuestionDto,
+  ) {
+    return this.quizzesService.updateQuestion(actor, questionId, dto);
+  }
+
+  @Roles(UserRole.ADMIN)
+  @Patch('module-quiz/:quizId')
+  updateModuleQuiz(
+    @CurrentUser() actor: RequestUser,
+    @Param('quizId') quizId: string,
+    @Body() dto: UpdateModuleQuizDto,
+  ) {
+    return this.quizzesService.updateModuleQuiz(actor, quizId, dto);
   }
 
   @Roles(UserRole.ADMIN)

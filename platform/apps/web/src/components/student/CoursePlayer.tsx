@@ -203,6 +203,7 @@ export function CoursePlayer({ trackId }: { trackId: string }) {
             setSelectedModuleId(moduleId);
           }}
           onOpenQuiz={(moduleId) => setQuizModal({ type: 'MODULE_QUIZ', fetchParam: moduleId })}
+          canTakeQuizzes={isEnrolled}
           onOpenAssessment={() => setQuizModal({ type: 'TRACK_ASSESSMENT', fetchParam: trackId })}
         />
 
