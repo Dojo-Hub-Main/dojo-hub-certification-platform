@@ -55,6 +55,17 @@ export function AssessmentWizard({
     onError: (e) => setError(e instanceof ApiError ? e.message : 'Submission failed. Please try again.'),
   });
 
+  // Every hook must run before the loading return below. A hook placed after it is
+  // skipped while the quiz loads and then called once it arrives, and React treats a
+  // changing number of hooks as fatal, which crashed the whole page.
+  const checkAnswer = useMutation({
+    mutationFn: ({ questionId, answer }: { questionId: string; answer: number | number[] }) =>
+      api.post<QuizAnswerCheckDto>(`/quizzes/questions/${questionId}/check`, { answer }),
+    onSuccess: (data) => setChecked((prev) => ({ ...prev, [data.questionId]: data })),
+    // A failed check must not block the quiz — the answer still counts on submission.
+    onError: () => setError('Could not check that answer just now. Keep going; it still counts.'),
+  });
+
   if (isLoading || !quiz) {
     return (
       <Modal open onClose={onClose} title="Loading quiz…" maxWidth="max-w-2xl">
@@ -73,14 +84,6 @@ export function AssessmentWizard({
   const instantFeedback = type === 'MODULE_QUIZ';
   const verdict = currentQuestion ? checked[currentQuestion.id] : undefined;
   const locked = !!verdict;
-
-  const checkAnswer = useMutation({
-    mutationFn: ({ questionId, answer }: { questionId: string; answer: number | number[] }) =>
-      api.post<QuizAnswerCheckDto>(`/quizzes/questions/${questionId}/check`, { answer }),
-    onSuccess: (data) => setChecked((prev) => ({ ...prev, [data.questionId]: data })),
-    // A failed check must not block the quiz — the answer still counts on submission.
-    onError: () => setError('Could not check that answer just now. Keep going; it still counts.'),
-  });
 
   const choose = (idx: number) => {
     if (!currentQuestion || locked) return;
