@@ -19,6 +19,7 @@ import {
 } from './dto/create-quiz.dto';
 import { CreateQuestionDto } from './dto/create-question.dto';
 import { UpdateModuleQuizDto, UpdateQuestionDto } from './dto/update-question.dto';
+import { CheckAnswerDto } from './dto/check-answer.dto';
 import { SubmitAttemptDto } from './dto/submit-attempt.dto';
 import { GradeAttemptDto } from './dto/grade-attempt.dto';
 
@@ -113,6 +114,17 @@ export class QuizzesController {
     @Param('questionId') questionId: string,
   ) {
     return this.quizzesService.removeQuestion(actor, questionId);
+  }
+
+  /** Marks one answer mid-quiz, so a student learns from a mistake while it is fresh. */
+  @Roles(UserRole.STUDENT)
+  @Post('questions/:questionId/check')
+  checkAnswer(
+    @CurrentUser() actor: RequestUser,
+    @Param('questionId') questionId: string,
+    @Body() dto: CheckAnswerDto,
+  ) {
+    return this.quizzesService.checkAnswer(actor, questionId, dto.answer);
   }
 
   @Roles(UserRole.STUDENT)

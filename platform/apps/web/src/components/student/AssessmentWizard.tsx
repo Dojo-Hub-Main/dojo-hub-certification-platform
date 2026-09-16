@@ -2,8 +2,8 @@
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, CheckCircle2, XCircle, Clock, Sparkles, Users } from 'lucide-react';
-import { AttemptTargetType, QuizDto, QuizGradeResultDto } from '@dojo-hub/shared';
+import { Check, CheckCircle2, XCircle, Clock, Sparkles, Users, X } from 'lucide-react';
+import { AttemptTargetType, QuizAnswerCheckDto, QuizDto, QuizGradeResultDto } from '@dojo-hub/shared';
 import { api, ApiError } from '@/lib/api-client';
 import { Button } from '../ui/Button';
 import { Modal } from '../ui/Modal';
@@ -28,6 +28,9 @@ export function AssessmentWizard({
   const [qIndex, setQIndex] = useState(0);
   // One option index per question, or an array of them where several answers are correct.
   const [objectiveAnswers, setObjectiveAnswers] = useState<Record<string, number | number[]>>({});
+  // Chapter quizzes mark each answer as it is given; the final assessment is marked only
+  // on submission, since it decides whether the course is completed.
+  const [checked, setChecked] = useState<Record<string, QuizAnswerCheckDto>>({});
   const [subjectiveText, setSubjectiveText] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<QuizGradeResultDto | null>(null);
@@ -67,15 +70,44 @@ export function AssessmentWizard({
   const isChosen = (idx: number) => (Array.isArray(currentAnswer) ? currentAnswer.includes(idx) : currentAnswer === idx);
   const hasAnswered = Array.isArray(currentAnswer) ? currentAnswer.length > 0 : currentAnswer !== undefined;
 
+  const instantFeedback = type === 'MODULE_QUIZ';
+  const verdict = currentQuestion ? checked[currentQuestion.id] : undefined;
+  const locked = !!verdict;
+
+  const checkAnswer = useMutation({
+    mutationFn: ({ questionId, answer }: { questionId: string; answer: number | number[] }) =>
+      api.post<QuizAnswerCheckDto>(`/quizzes/questions/${questionId}/check`, { answer }),
+    onSuccess: (data) => setChecked((prev) => ({ ...prev, [data.questionId]: data })),
+    // A failed check must not block the quiz — the answer still counts on submission.
+    onError: () => setError('Could not check that answer just now. Keep going; it still counts.'),
+  });
+
   const choose = (idx: number) => {
-    if (!currentQuestion) return;
+    if (!currentQuestion || locked) return;
+    setError(null);
     if (!isMulti) {
       setObjectiveAnswers({ ...objectiveAnswers, [currentQuestion.id]: idx });
+      // One answer, so there is nothing more to wait for — mark it straight away.
+      if (instantFeedback) checkAnswer.mutate({ questionId: currentQuestion.id, answer: idx });
       return;
     }
     const ticked = Array.isArray(currentAnswer) ? currentAnswer : [];
     const next = ticked.includes(idx) ? ticked.filter((i) => i !== idx) : [...ticked, idx].sort((a, b) => a - b);
     setObjectiveAnswers({ ...objectiveAnswers, [currentQuestion.id]: next });
+  };
+
+  /** How one option should read once the answer has been marked. */
+  const optionState = (idx: number): 'correct' | 'wrong' | 'neutral' => {
+    if (!verdict) return 'neutral';
+    const isKey = verdict.correctIndex === null ? verdict.correctIndices.includes(idx) : verdict.correctIndex === idx;
+    if (isKey) return 'correct';
+    return isChosen(idx) ? 'wrong' : 'neutral';
+  };
+
+  const OPTION_CLASSES: Record<string, string> = {
+    correct: 'border-green-500 bg-green-50 font-semibold text-green-800',
+    wrong: 'border-crimson-500 bg-crimson-50 font-semibold text-crimson-700',
+    neutral: 'border-navy-200 text-navy-500',
   };
 
   return (
@@ -104,6 +136,12 @@ export function AssessmentWizard({
                 <span className="font-bold">Pass mark:</span> {quiz.passThreshold}% of questions correct
               </p>
             )}
+            {type === 'MODULE_QUIZ' && (
+              <p>
+                <span className="font-bold">As you go:</span> each answer is marked straight away, so you see what was
+                right before moving on.
+              </p>
+            )}
             <p>
               <span className="font-bold">Note:</span> this is an optional self-check — it doesn&apos;t affect your certification progress.
             </p>
@@ -128,15 +166,21 @@ export function AssessmentWizard({
           <div className="space-y-2" role={isMulti ? 'group' : 'radiogroup'} aria-label={currentQuestion.question}>
             {currentQuestion.options?.map((opt, idx) => {
               const chosen = isChosen(idx);
+              const state = optionState(idx);
               return (
                 <button
                   key={idx}
                   type="button"
                   role={isMulti ? 'checkbox' : 'radio'}
                   aria-checked={chosen}
+                  disabled={locked}
                   onClick={() => choose(idx)}
                   className={`w-full flex items-center gap-3 text-left px-4 py-2.5 rounded-xl border text-xs transition-colors ${
-                    chosen ? 'border-crimson-500 bg-crimson-50 font-semibold text-crimson-700' : 'border-navy-200 hover:bg-navy-50'
+                    locked
+                      ? `${OPTION_CLASSES[state]} cursor-default`
+                      : chosen
+                        ? 'border-crimson-500 bg-crimson-50 font-semibold text-crimson-700'
+                        : 'border-navy-200 hover:bg-navy-50'
                   }`}
                 >
                   {/* Square boxes for tick-all questions, round ones for pick-one, so the
@@ -144,30 +188,85 @@ export function AssessmentWizard({
                   <span
                     aria-hidden
                     className={`w-4 h-4 shrink-0 border-2 flex items-center justify-center ${isMulti ? 'rounded' : 'rounded-full'} ${
-                      chosen ? 'border-crimson-600 bg-crimson-600' : 'border-navy-300 bg-white'
+                      locked
+                        ? state === 'correct'
+                          ? 'border-green-600 bg-green-600'
+                          : state === 'wrong'
+                            ? 'border-crimson-600 bg-crimson-600'
+                            : 'border-navy-200 bg-white'
+                        : chosen
+                          ? 'border-crimson-600 bg-crimson-600'
+                          : 'border-navy-300 bg-white'
                     }`}
                   >
-                    {chosen && (isMulti ? <Check className="w-2.5 h-2.5 text-white" strokeWidth={3} /> : <span className="w-1.5 h-1.5 rounded-full bg-white" />)}
+                    {locked ? (
+                      state === 'correct' ? (
+                        <Check className="w-2.5 h-2.5 text-white" strokeWidth={3} />
+                      ) : state === 'wrong' ? (
+                        <X className="w-2.5 h-2.5 text-white" strokeWidth={3} />
+                      ) : null
+                    ) : (
+                      chosen && (isMulti ? <Check className="w-2.5 h-2.5 text-white" strokeWidth={3} /> : <span className="w-1.5 h-1.5 rounded-full bg-white" />)
+                    )}
                   </span>
-                  <span>{opt}</span>
+                  <span className="flex-1">{opt}</span>
+                  {locked && state === 'correct' && (
+                    <span className="text-[11px] font-mono uppercase tracking-wider text-green-700 shrink-0">Correct answer</span>
+                  )}
+                  {locked && state === 'wrong' && (
+                    <span className="text-[11px] font-mono uppercase tracking-wider text-crimson-600 shrink-0">Your answer</span>
+                  )}
                 </button>
               );
             })}
           </div>
+          {verdict && (
+            <div
+              role="status"
+              className={`rounded-xl border p-3 space-y-1 ${verdict.correct ? 'bg-green-50 border-green-200' : 'bg-crimson-50 border-crimson-200'}`}
+            >
+              <p className={`flex items-center gap-1.5 text-xs font-bold ${verdict.correct ? 'text-green-800' : 'text-crimson-700'}`}>
+                {verdict.correct ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+                {verdict.correct
+                  ? 'Correct'
+                  : isMulti
+                    ? 'Not quite — every correct option had to be ticked, and no others'
+                    : 'Not quite'}
+              </p>
+              {verdict.explanation && <p className="text-xs text-navy-600">{verdict.explanation}</p>}
+            </div>
+          )}
+
+          {error && <p className="text-xs text-crimson-600">{error}</p>}
+
           <div className="flex justify-between pt-2">
             <Button variant="outline" size="sm" disabled={qIndex === 0} onClick={() => setQIndex(qIndex - 1)}>
               Back
             </Button>
-            <Button
-              size="sm"
-              disabled={!hasAnswered}
-              onClick={() => {
-                if (qIndex < objectiveQuestions.length - 1) setQIndex(qIndex + 1);
-                else setStep(quiz.subjectiveQuestion ? 'subjective' : 'objective-done');
-              }}
-            >
-              {qIndex < objectiveQuestions.length - 1 ? 'Next Question' : quiz.subjectiveQuestion ? 'Proceed to Subjective' : 'Review & Submit'}
-            </Button>
+            {/* Tick-all questions are only marked once the student says they are done,
+                since an answer is not finished until every box they want is ticked. */}
+            {instantFeedback && isMulti && !locked ? (
+              <Button
+                size="sm"
+                disabled={!hasAnswered}
+                loading={checkAnswer.isPending}
+                onClick={() => checkAnswer.mutate({ questionId: currentQuestion.id, answer: currentAnswer as number[] })}
+              >
+                Check answer
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                disabled={!hasAnswered || checkAnswer.isPending}
+                onClick={() => {
+                  setError(null);
+                  if (qIndex < objectiveQuestions.length - 1) setQIndex(qIndex + 1);
+                  else setStep(quiz.subjectiveQuestion ? 'subjective' : 'objective-done');
+                }}
+              >
+                {qIndex < objectiveQuestions.length - 1 ? 'Next Question' : quiz.subjectiveQuestion ? 'Proceed to Subjective' : 'Review & Submit'}
+              </Button>
+            )}
           </div>
         </div>
       )}

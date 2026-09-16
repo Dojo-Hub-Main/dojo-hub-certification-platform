@@ -382,6 +382,44 @@ export class QuizzesService {
   // Attempts
   // -------------------------------------------------------------------------
 
+  /**
+   * Marks a single answer while the student is still taking the quiz, so a mistake is
+   * explained while the question is still in front of them rather than at the end.
+   *
+   * Chapter quizzes only. They are an optional self-check that changes no record, so
+   * showing the answer key one question at a time costs nothing. The final course
+   * assessment decides whether a course is completed, so it is marked only on submission.
+   */
+  async checkAnswer(
+    actor: RequestUser,
+    questionId: string,
+    answer: number | number[],
+  ) {
+    const question = await this.prisma.quizQuestion.findUnique({
+      where: { id: questionId },
+    });
+    if (!question) throw new NotFoundException('Question not found.');
+    if (!question.moduleQuizId || question.type !== QuizQuestionType.OBJECTIVE) {
+      throw new ForbiddenException(
+        'Answers are only revealed question by question on chapter quizzes.',
+      );
+    }
+
+    await this.assertCanAttempt(
+      actor,
+      AttemptTargetType.MODULE_QUIZ,
+      question.moduleQuizId,
+    );
+
+    return {
+      questionId,
+      correct: QuizzesService.isAnsweredCorrectly(question, answer),
+      correctIndex: question.correctIndex,
+      correctIndices: question.correctIndices,
+      explanation: question.explanation ?? '',
+    };
+  }
+
   async submitAttempt(
     actor: RequestUser,
     type: AttemptTargetType,

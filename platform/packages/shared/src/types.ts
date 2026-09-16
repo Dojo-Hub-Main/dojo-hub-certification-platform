@@ -221,6 +221,17 @@ export interface QuizDto {
   passThreshold: number;
 }
 
+/** The verdict on one answer, returned while the student is still taking a chapter quiz. */
+export interface QuizAnswerCheckDto {
+  questionId: string;
+  correct: boolean;
+  /** The correct option, or null on a question where several options are correct. */
+  correctIndex: number | null;
+  /** The correct options when several are, empty otherwise. */
+  correctIndices: number[];
+  explanation: string;
+}
+
 export interface QuizGradeResultDto {
   attemptId: string;
   objectiveScore: number;
