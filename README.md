@@ -27,8 +27,6 @@ credentials.
 | **NestJS** | 11 | REST API framework |
 | **PostgreSQL** | 16 | Primary database |
 | **Prisma** | 6 | ORM, migrations, type-safe queries |
-| **Redis** | 7 | Background jobs, Socket.IO adapter |
-| **BullMQ** | 5 | Job queue |
 | **Socket.IO** | 4 | Live notifications |
 | **MinIO** (S3-compatible) | — | Object storage for videos and documents |
 | **Passport / JWT** | — | Auth via httpOnly access + refresh cookies |
@@ -53,7 +51,7 @@ credentials.
 
 ### Infrastructure
 
-Docker Compose runs PostgreSQL, Redis, and MinIO locally. A shared `packages/shared` workspace holds the TypeScript enums and DTOs used by both apps, so the API and frontend never drift apart on the data contract.
+Docker Compose runs PostgreSQL and MinIO locally. A shared `packages/shared` workspace holds the TypeScript enums and DTOs used by both apps, so the API and frontend never drift apart on the data contract.
 
 ## Repository layout
 
@@ -62,7 +60,7 @@ platform/              The application (npm workspaces monorepo)
   apps/api/            NestJS backend
   apps/web/            Next.js frontend
   packages/shared/     Shared enums + DTO types
-  docker-compose.yml   postgres, redis, minio
+  docker-compose.yml   postgres, minio
 src/, index.html       Original standalone prototype, kept for reference
 ```
 
@@ -74,7 +72,7 @@ Quick version — from the `platform/` directory:
 
 ```bash
 npm install
-npm run db:up            # start postgres, redis, minio
+npm run db:up            # start postgres, minio
 cp apps/api/.env.example apps/api/.env
 cp apps/web/.env.example apps/web/.env.local
 npm run prisma:generate

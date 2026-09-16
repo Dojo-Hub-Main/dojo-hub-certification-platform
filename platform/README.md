@@ -1,6 +1,6 @@
 # Dojo Hub Certification Platform — Production Build
 
-A production-grade rewrite of the Dojo Hub certification platform prototype: **NestJS** REST API + **Next.js 16** (App Router) frontend, backed by **PostgreSQL** via Prisma, **Redis** (jobs/notifications), and **S3-compatible object storage** (MinIO locally).
+A production-grade rewrite of the Dojo Hub certification platform prototype: **NestJS** REST API + **Next.js 16** (App Router) frontend, backed by **PostgreSQL** via Prisma and **S3-compatible object storage** (MinIO locally).
 
 The original AI-Studio prototype lives untouched at the repository root (`../src`, `../index.html`, etc.) — this `platform/` directory is the new, real application, built alongside it.
 
@@ -15,7 +15,7 @@ platform/
              credential verification page
   packages/
     shared/  Shared TypeScript enums & DTO types consumed by both apps
-  docker-compose.yml   postgres, redis, minio (+ bucket bootstrap)
+  docker-compose.yml   postgres, minio (+ bucket bootstrap)
 ```
 
 Both apps are fully independent services (separate origins/ports) talking over a REST API with httpOnly-cookie JWT auth — the frontend never gets direct database or filesystem access.
@@ -23,7 +23,7 @@ Both apps are fully independent services (separate origins/ports) talking over a
 ## Prerequisites
 
 - **Node.js 20.9+** (Next.js 16 requirement) and npm
-- **Docker Desktop** — required to run PostgreSQL, Redis, and MinIO locally. **This was not installed on the machine this was built on** — install it before continuing past step 3 below.
+- **Docker Desktop** — required to run PostgreSQL and MinIO locally. **This was not installed on the machine this was built on** — install it before continuing past step 3 below.
 - An **Anthropic API key** (`ANTHROPIC_API_KEY`) if you want real AI grading of subjective quiz answers. Without it, the "AI Instant Grading" option in the assessment wizard will return a clear error — students can still use "Manual Evaluator Review" in that case, which always works.
 
 ## First-time setup
@@ -32,7 +32,7 @@ Both apps are fully independent services (separate origins/ports) talking over a
 # 1. Install all workspace dependencies (run from platform/)
 npm install
 
-# 2. Start Postgres, Redis, and MinIO
+# 2. Start Postgres and MinIO
 npm run db:up
 
 # 3. Copy env files and fill in secrets (already done for local dev if you're reading

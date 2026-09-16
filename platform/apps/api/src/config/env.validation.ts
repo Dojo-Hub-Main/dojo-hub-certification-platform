@@ -28,9 +28,6 @@ class EnvVars {
   DATABASE_URL: string;
 
   @IsString()
-  REDIS_URL: string;
-
-  @IsString()
   @MinLength(32)
   JWT_ACCESS_SECRET: string;
 

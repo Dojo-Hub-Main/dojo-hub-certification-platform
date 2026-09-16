@@ -1,9 +1,8 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ConfigModule } from '@nestjs/config';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { ProxyAwareThrottlerGuard } from './common/guards/proxy-throttler.guard';
-import { BullModule } from '@nestjs/bullmq';
 import configuration from './config/configuration';
 import { validateEnv } from './config/env.validation';
 import { AppController } from './app.controller';
@@ -44,12 +43,6 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
       // Raised from 120: requests arrive via the web app's proxy, so a single
       // shared bucket would be exhausted by a handful of active users.
       throttlers: [{ ttl: 60_000, limit: 400 }],
-    }),
-    BullModule.forRootAsync({
-      inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        connection: { url: config.get<string>('redis.url') },
-      }),
     }),
     PrismaModule,
     AuditModule,
