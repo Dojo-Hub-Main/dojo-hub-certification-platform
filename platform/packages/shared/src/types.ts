@@ -122,6 +122,10 @@ export interface QuizQuestionAdminDto {
   correctIndex: number | null;
   correctIndices: number[];
   explanation: string | null;
+  /** Feedback per option, in option order; "" where none was written. */
+  optionFeedback: string[];
+  /** The lesson a student is sent back to after a wrong answer, if any. */
+  reviewTopicId: string | null;
   prompt: string | null;
   guidelines: string | null;
 }
@@ -206,6 +210,8 @@ export interface QuizQuestionPublicDto {
   options?: string[];
   /** Students tick every correct option; answer with an array of option indices. */
   allowMultiple?: boolean;
+  /** The lesson to review after a wrong answer — watched or read inside the quiz. */
+  reviewTopic?: QuizReviewLessonDto | null;
   prompt?: string;
   guidelines?: string;
   sampleKeywords?: string[];
@@ -221,15 +227,37 @@ export interface QuizDto {
   passThreshold: number;
 }
 
-/** The verdict on one answer, returned while the student is still taking a chapter quiz. */
+export interface QuizReviewLessonDto {
+  id: string;
+  title: string;
+  description: string;
+  durationSeconds: number;
+  videoUrl: string;
+  resources: TopicResourceDto[];
+  documents: StoredFileDto[];
+}
+
+/**
+ * The verdict on one submitted answer during a chapter quiz. Deliberately carries no answer
+ * key: a wrong answer is explained, never corrected, so the student can try again.
+ */
 export interface QuizAnswerCheckDto {
   questionId: string;
   correct: boolean;
-  /** The correct option, or null on a question where several options are correct. */
-  correctIndex: number | null;
-  /** The correct options when several are, empty otherwise. */
-  correctIndices: number[];
+  /** Feedback for the chosen option; the question's explanation once answered correctly. */
+  feedback: string;
+}
+
+/** One question's outcome once a whole attempt is submitted, with the key for review. */
+export interface QuizQuestionResultDto {
+  questionId: string;
+  correct: boolean;
   explanation: string;
+  selected?: number | number[] | null;
+  allowMultiple?: boolean;
+  correctIndex?: number | null;
+  correctIndices?: number[];
+  optionFeedback?: string[];
 }
 
 export interface QuizGradeResultDto {
@@ -242,7 +270,7 @@ export interface QuizGradeResultDto {
   subjectiveFeedback: string | null;
   weightedScore: number | null;
   passed: boolean | null;
-  perQuestionResults: { questionId: string; correct: boolean; explanation: string }[];
+  perQuestionResults: QuizQuestionResultDto[];
 }
 
 export interface StoredFileDto {

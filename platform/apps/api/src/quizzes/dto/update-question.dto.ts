@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import {
+  ArrayMaxSize,
   ArrayMinSize,
   ArrayUnique,
   IsArray,
@@ -7,7 +8,9 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  IsUUID,
   Max,
+  MaxLength,
   Min,
   MinLength,
 } from 'class-validator';
@@ -57,6 +60,21 @@ export class UpdateQuestionDto {
   @IsString()
   @MinLength(5)
   explanation?: string;
+
+  /** Why each option is right or wrong, in option order; "" where there is nothing to say. */
+  @ApiProperty({ type: [String], required: false })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @IsString({ each: true })
+  @MaxLength(1000, { each: true })
+  optionFeedback?: string[];
+
+  /** The lesson to point a student back to after a wrong answer. null clears it. */
+  @ApiProperty({ required: false, nullable: true })
+  @IsOptional()
+  @IsUUID()
+  reviewTopicId?: string | null;
 
   @ApiProperty({ required: false })
   @IsOptional()

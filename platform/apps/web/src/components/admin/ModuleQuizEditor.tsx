@@ -24,9 +24,22 @@ type Draft = {
   correctIndex: number;
   correctIndices: number[];
   explanation: string;
+  /** Shown under an option once a student submits it; kept in step with options. */
+  optionFeedback: string[];
+  /** The lesson offered for review after a wrong answer; "" for none. */
+  reviewTopicId: string;
 };
 
-const BLANK: Draft = { question: '', options: ['', ''], allowMultiple: false, correctIndex: 0, correctIndices: [], explanation: '' };
+const BLANK: Draft = {
+  question: '',
+  options: ['', ''],
+  allowMultiple: false,
+  correctIndex: 0,
+  correctIndices: [],
+  explanation: '',
+  optionFeedback: ['', ''],
+  reviewTopicId: '',
+};
 
 function toDraft(q: QuizQuestionAdminDto): Draft {
   return {
@@ -36,6 +49,8 @@ function toDraft(q: QuizQuestionAdminDto): Draft {
     correctIndex: q.correctIndex ?? 0,
     correctIndices: q.correctIndices ?? [],
     explanation: q.explanation ?? '',
+    optionFeedback: Array.from({ length: Math.max(2, q.options.length) }, (_, i) => q.optionFeedback?.[i] ?? ''),
+    reviewTopicId: q.reviewTopicId ?? '',
   };
 }
 
@@ -96,6 +111,8 @@ export function ModuleQuizEditor({ mod, trackId }: { mod: ModuleDto; trackId: st
       ? { correctIndices: [...draft.correctIndices].sort((a, b) => a - b) }
       : { correctIndex: draft.correctIndex }),
     explanation: draft.explanation.trim(),
+    optionFeedback: draft.options.map((_, i) => (draft.optionFeedback[i] ?? '').trim()),
+    reviewTopicId: draft.reviewTopicId || null,
   });
 
   const saveQuestion = useMutation({
@@ -234,7 +251,8 @@ export function ModuleQuizEditor({ mod, trackId }: { mod: ModuleDto; trackId: st
           const marked = draft.allowMultiple ? draft.correctIndices.includes(i) : draft.correctIndex === i;
           const shape = draft.allowMultiple ? 'rounded' : 'rounded-full';
           return (
-          <div key={i} className="flex items-center gap-2">
+          <div key={i} className="space-y-1">
+          <div className="flex items-center gap-2">
             <button
               type="button"
               role={draft.allowMultiple ? 'checkbox' : 'radio'}
@@ -279,7 +297,9 @@ export function ModuleQuizEditor({ mod, trackId }: { mod: ModuleDto; trackId: st
                   if (i < correctIndex) correctIndex -= 1;
                   else if (i === correctIndex) correctIndex = 0;
                   const correctIndices = draft.correctIndices.filter((c) => c !== i).map((c) => (c > i ? c - 1 : c));
-                  setDraft({ ...draft, options, correctIndex, correctIndices });
+                  // Feedback travels with its option, so it never lands under a different one.
+                  const optionFeedback = draft.options.map((_, oi) => draft.optionFeedback[oi] ?? '').filter((_, oi) => oi !== i);
+                  setDraft({ ...draft, options, correctIndex, correctIndices, optionFeedback });
                 }}
                 className="p-1.5 text-navy-400 hover:text-crimson-600 shrink-0"
               >
@@ -287,11 +307,33 @@ export function ModuleQuizEditor({ mod, trackId }: { mod: ModuleDto; trackId: st
               </button>
             )}
           </div>
+          <input
+            className="input text-xs py-1.5 ml-7 w-[calc(100%-1.75rem)] bg-white"
+            aria-label={'Feedback for option ' + (i + 1)}
+            placeholder={
+              marked
+                ? 'Why this is right (optional) — shown when a student picks it'
+                : 'Why this is wrong (optional) — shown when a student picks it, without giving the answer away'
+            }
+            value={draft.optionFeedback[i] ?? ''}
+            onChange={(e) => {
+              const optionFeedback = draft.options.map((_, oi) => draft.optionFeedback[oi] ?? '');
+              optionFeedback[i] = e.target.value;
+              setDraft({ ...draft, optionFeedback });
+            }}
+          />
+          </div>
           );
         })}
         <button
           type="button"
-          onClick={() => setDraft({ ...draft, options: [...draft.options, ''] })}
+          onClick={() =>
+            setDraft({
+              ...draft,
+              options: [...draft.options, ''],
+              optionFeedback: [...draft.options.map((_, oi) => draft.optionFeedback[oi] ?? ''), ''],
+            })
+          }
           className="text-xs font-bold text-crimson-600 hover:underline"
         >
           + Add option
@@ -301,10 +343,32 @@ export function ModuleQuizEditor({ mod, trackId }: { mod: ModuleDto; trackId: st
       <textarea
         className="input text-sm resize-y"
         rows={2}
-        placeholder="Explanation — shown to students after they submit"
+        placeholder="Explanation — shown once a student gets this right, and in their answer review"
         value={draft.explanation}
         onChange={(e) => setDraft({ ...draft, explanation: e.target.value })}
       />
+
+      <label className="block space-y-1">
+        <span className="text-[11px] font-mono uppercase tracking-wider text-navy-500">
+          Lesson to review after a wrong answer (optional)
+        </span>
+        <select
+          className="input text-sm py-2"
+          value={draft.reviewTopicId}
+          onChange={(e) => setDraft({ ...draft, reviewTopicId: e.target.value })}
+        >
+          <option value="">No lesson</option>
+          {mod.topics.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.title}
+              {t.videoUrl ? ' (video)' : ' (reading)'}
+            </option>
+          ))}
+        </select>
+        <span className="block text-[11px] text-navy-500">
+          Students can replay its video, or read its material, without leaving the quiz.
+        </span>
+      </label>
 
       {editing !== 'new' && (
         <p className="text-[11px] text-navy-500">

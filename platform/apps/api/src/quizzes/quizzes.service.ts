@@ -11,6 +11,7 @@ import {
   QuizQuestionType,
   SubjectiveGradedBy,
   SubjectiveStatus,
+  UserRole,
 } from '@dojo-hub/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -26,6 +27,29 @@ import { CreateQuestionDto } from './dto/create-question.dto';
 import { UpdateModuleQuizDto, UpdateQuestionDto } from './dto/update-question.dto';
 import { SubmitAttemptDto } from './dto/submit-attempt.dto';
 import { GradeAttemptDto } from './dto/grade-attempt.dto';
+
+/**
+ * What a student is shown of the lesson a question points back to: enough to watch the
+ * video or read the material again without leaving the quiz.
+ */
+const REVIEW_TOPIC_SELECT = {
+  id: true,
+  title: true,
+  description: true,
+  durationSeconds: true,
+  videoUrl: true,
+  resources: true,
+  documents: {
+    select: {
+      id: true,
+      url: true,
+      originalName: true,
+      sizeBytes: true,
+      mimeType: true,
+      kind: true,
+    },
+  },
+} as const;
 
 @Injectable()
 export class QuizzesService {
@@ -81,16 +105,35 @@ export class QuizzesService {
     dto: CreateQuestionDto,
   ) {
     // A written question has no answer key, so any key fields sent with one are dropped.
-    const { allowMultiple, correctIndex, correctIndices, ...fields } = dto;
-    const answerKey =
-      dto.type === QuizQuestionType.OBJECTIVE
-        ? this.resolveAnswerKey(
+    const {
+      allowMultiple,
+      correctIndex,
+      correctIndices,
+      optionFeedback,
+      reviewTopicId,
+      ...fields
+    } = dto;
+    const objective = dto.type === QuizQuestionType.OBJECTIVE;
+    const answerKey = objective
+      ? this.resolveAnswerKey(
+          dto.options ?? [],
+          allowMultiple ?? false,
+          correctIndex,
+          correctIndices,
+        )
+      : { allowMultiple: false, correctIndex: null, correctIndices: [] };
+    if (objective && reviewTopicId) {
+      await this.assertReviewTopic(reviewTopicId, target);
+    }
+    const extras = objective
+      ? {
+          optionFeedback: this.normaliseOptionFeedback(
             dto.options ?? [],
-            allowMultiple ?? false,
-            correctIndex,
-            correctIndices,
-          )
-        : { allowMultiple: false, correctIndex: null, correctIndices: [] };
+            optionFeedback,
+          ),
+          reviewTopicId: reviewTopicId ?? null,
+        }
+      : { optionFeedback: [], reviewTopicId: null };
 
     // Next position comes from the highest existing one, not the count. After a delete
     // the count no longer matches the positions in use, so count-based ordering handed
@@ -105,6 +148,7 @@ export class QuizzesService {
         ...target,
         ...fields,
         ...answerKey,
+        ...extras,
         order: last ? last.order + 1 : 0,
         options: dto.options ?? [],
         sampleKeywords: dto.sampleKeywords ?? [],
@@ -168,20 +212,40 @@ export class QuizzesService {
     // Validate against the question as it will be after the edit, not just the fields
     // sent. Removing an option can leave a stored correct answer pointing past the end,
     // and switching between one and several correct answers needs the matching key.
-    const { allowMultiple, correctIndex, correctIndices, ...fields } = dto;
-    const answerKey =
-      existing.type === QuizQuestionType.OBJECTIVE
-        ? this.resolveAnswerKey(
-            dto.options ?? existing.options,
-            allowMultiple ?? existing.allowMultiple,
-            correctIndex ?? existing.correctIndex,
-            correctIndices ?? existing.correctIndices,
-          )
-        : {};
+    const {
+      allowMultiple,
+      correctIndex,
+      correctIndices,
+      optionFeedback,
+      reviewTopicId,
+      ...fields
+    } = dto;
+    const objective = existing.type === QuizQuestionType.OBJECTIVE;
+    const answerKey = objective
+      ? this.resolveAnswerKey(
+          dto.options ?? existing.options,
+          allowMultiple ?? existing.allowMultiple,
+          correctIndex ?? existing.correctIndex,
+          correctIndices ?? existing.correctIndices,
+        )
+      : {};
+
+    const extras: { optionFeedback?: string[]; reviewTopicId?: string | null } = {};
+    if (objective && (dto.options !== undefined || optionFeedback !== undefined)) {
+      // Re-fitted whenever the options change, so feedback never outlives its option.
+      extras.optionFeedback = this.normaliseOptionFeedback(
+        dto.options ?? existing.options,
+        optionFeedback ?? existing.optionFeedback,
+      );
+    }
+    if (objective && reviewTopicId !== undefined) {
+      if (reviewTopicId) await this.assertReviewTopic(reviewTopicId, existing);
+      extras.reviewTopicId = reviewTopicId;
+    }
 
     const question = await this.prisma.quizQuestion.update({
       where: { id: questionId },
-      data: { ...fields, ...answerKey },
+      data: { ...fields, ...answerKey, ...extras },
     });
 
     await this.auditService.log({
@@ -253,6 +317,56 @@ export class QuizzesService {
   }
 
   /**
+   * One entry per option, trimmed, "" where the author wrote nothing. More entries than
+   * options means the two lists have gone out of step, so that is refused rather than
+   * letting feedback land under the wrong option.
+   */
+  private normaliseOptionFeedback(
+    options: string[],
+    feedback: string[] | undefined,
+  ): string[] {
+    const given = feedback ?? [];
+    if (given.length > options.length) {
+      throw new BadRequestException(
+        'There is more option feedback than there are options.',
+      );
+    }
+    return options.map((_, i) => (given[i] ?? '').trim());
+  }
+
+  /** A question can only point back to a lesson its students can actually reach. */
+  private async assertReviewTopic(
+    topicId: string,
+    target: { moduleQuizId?: string | null; trackAssessmentId?: string | null },
+  ) {
+    const topic = await this.prisma.topic.findUnique({
+      where: { id: topicId },
+      select: { moduleId: true, module: { select: { trackId: true } } },
+    });
+    if (!topic) throw new BadRequestException('That lesson no longer exists.');
+
+    if (target.moduleQuizId) {
+      const quiz = await this.prisma.moduleQuiz.findUnique({
+        where: { id: target.moduleQuizId },
+        select: { moduleId: true },
+      });
+      if (!quiz || quiz.moduleId !== topic.moduleId) {
+        throw new BadRequestException(
+          "Pick a lesson from this quiz's own module.",
+        );
+      }
+    } else if (target.trackAssessmentId) {
+      const assessment = await this.prisma.trackAssessment.findUnique({
+        where: { id: target.trackAssessmentId },
+        select: { trackId: true },
+      });
+      if (!assessment || assessment.trackId !== topic.module.trackId) {
+        throw new BadRequestException('Pick a lesson from this course.');
+      }
+    }
+  }
+
+  /**
    * The stored answer key for a multiple-choice question. Exactly one of the two keys is
    * kept — correctIndex for one correct answer, correctIndices for several — so marking
    * never has to guess which applies. An answer pointing at an option that does not
@@ -312,13 +426,24 @@ export class QuizzesService {
   // Student-facing reads (answer keys stripped)
   // -------------------------------------------------------------------------
 
-  async getModuleQuiz(moduleId: string) {
+  async getModuleQuiz(actor: RequestUser, moduleId: string) {
     const quiz = await this.prisma.moduleQuiz.findUnique({
       where: { moduleId },
-      include: { questions: { orderBy: { order: 'asc' } } },
+      include: {
+        questions: {
+          orderBy: { order: 'asc' },
+          include: { reviewTopic: { select: REVIEW_TOPIC_SELECT } },
+        },
+      },
     });
     if (!quiz)
       throw new NotFoundException('This module does not have a chapter quiz.');
+
+    // The questions carry the lesson to review — its video and documents — so they are
+    // course content like any lesson: a student must be enrolled, and the quiz visible.
+    if (actor.role === UserRole.STUDENT) {
+      await this.assertCanAttempt(actor, AttemptTargetType.MODULE_QUIZ, quiz.id);
+    }
     return this.toPublicQuizDto(quiz, AttemptTargetType.MODULE_QUIZ, moduleId);
   }
 
@@ -350,6 +475,8 @@ export class QuizzesService {
       correctIndex: number | null;
       correctIndices: number[];
       explanation: string | null;
+      optionFeedback: string[];
+      reviewTopicId: string | null;
     },
     T extends {
       id: string;
@@ -362,7 +489,14 @@ export class QuizzesService {
     // via perQuestionResults, but sending it with the questions put it in the browser
     // before the student answered — and an explanation usually names the right option.
     const stripped = quiz.questions.map(
-      ({ correctIndex, correctIndices, explanation, ...rest }) => rest,
+      ({
+        correctIndex,
+        correctIndices,
+        explanation,
+        optionFeedback,
+        reviewTopicId,
+        ...rest
+      }) => rest,
     );
     return {
       id: quiz.id,
@@ -383,12 +517,15 @@ export class QuizzesService {
   // -------------------------------------------------------------------------
 
   /**
-   * Marks a single answer while the student is still taking the quiz, so a mistake is
-   * explained while the question is still in front of them rather than at the end.
+   * Marks one submitted answer while the student is still on the question, the way
+   * LinkedIn Learning does: right or wrong, with the feedback written for that option.
    *
-   * Chapter quizzes only. They are an optional self-check that changes no record, so
-   * showing the answer key one question at a time costs nothing. The final course
-   * assessment decides whether a course is completed, so it is marked only on submission.
+   * A wrong answer never reveals the right one — the student is meant to review the lesson
+   * and try again — so only the chosen option's own feedback comes back. The question's
+   * general explanation, which usually names the answer, is sent only once they get it.
+   *
+   * Chapter quizzes only. The final course assessment decides whether a course is
+   * completed, so it is marked only on submission.
    */
   async checkAnswer(
     actor: RequestUser,
@@ -411,12 +548,20 @@ export class QuizzesService {
       question.moduleQuizId,
     );
 
+    const correct = QuizzesService.isAnsweredCorrectly(question, answer);
+    // Per-option feedback only makes sense for a single chosen option. On a tick-all
+    // question, saying which ticks were wrong would hand over the answer.
+    const ownFeedback =
+      !question.allowMultiple && typeof answer === 'number'
+        ? (question.optionFeedback[answer] ?? '')
+        : '';
+
     return {
       questionId,
-      correct: QuizzesService.isAnsweredCorrectly(question, answer),
-      correctIndex: question.correctIndex,
-      correctIndices: question.correctIndices,
-      explanation: question.explanation ?? '',
+      correct,
+      feedback: correct
+        ? ownFeedback || question.explanation || ''
+        : ownFeedback,
     };
   }
 
@@ -433,6 +578,7 @@ export class QuizzesService {
         type === AttemptTargetType.MODULE_QUIZ
           ? { moduleQuizId: targetId }
           : { trackAssessmentId: targetId },
+      orderBy: { order: 'asc' },
     });
     if (questions.length === 0) throw new NotFoundException('Quiz not found.');
 
@@ -450,7 +596,18 @@ export class QuizzesService {
         dto.objectiveAnswers[q.id],
       );
       if (correct) objectiveScore += 1;
-      return { questionId: q.id, correct, explanation: q.explanation ?? '' };
+      // The full key goes back only now the attempt is over, so "Review all answers"
+      // can show every question with the student's answer and the right one.
+      return {
+        questionId: q.id,
+        correct,
+        explanation: q.explanation ?? '',
+        selected: dto.objectiveAnswers[q.id] ?? null,
+        allowMultiple: q.allowMultiple,
+        correctIndex: q.correctIndex,
+        correctIndices: q.correctIndices,
+        optionFeedback: q.optionFeedback,
+      };
     });
 
     if (

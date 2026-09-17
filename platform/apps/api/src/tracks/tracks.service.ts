@@ -540,10 +540,15 @@ export class TracksService {
    */
   private stripAnswerKeys(track: FullTrack) {
     const strip = <
-      Q extends { correctIndex: number | null; correctIndices: number[] },
+      Q extends {
+        correctIndex: number | null;
+        correctIndices: number[];
+        optionFeedback: string[];
+      },
     >({
       correctIndex,
       correctIndices,
+      optionFeedback,
       ...rest
     }: Q) => rest;
     return {

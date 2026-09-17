@@ -261,6 +261,7 @@ model Topic {
   documents    StoredFile[]
   progress     TopicProgress[]
   submissions  Submission[]
+  reviewedBy   QuizQuestion[] @relation("QuizQuestionReviewTopic")
 
   @@index([moduleId])
 }
@@ -320,6 +321,14 @@ model QuizQuestion {
   allowMultiple  Boolean @default(false)
   correctIndices Int[]   @default([])
   explanation  String?
+  /// Why each option is right or wrong, in the same order as options; "" where the author
+  /// wrote nothing. Shown under an option once a student submits it, so a wrong answer can
+  /// be explained without giving away the right one.
+  optionFeedback String[] @default([])
+  /// The lesson a student is pointed back to after a wrong answer. Cleared, not cascaded,
+  /// if that lesson is deleted.
+  reviewTopicId  String?
+  reviewTopic    Topic?   @relation("QuizQuestionReviewTopic", fields: [reviewTopicId], references: [id], onDelete: SetNull)
 
   // Subjective
   prompt          String?

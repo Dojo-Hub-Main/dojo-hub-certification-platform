@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { QuizQuestionType } from '@dojo-hub/shared';
 import {
+  ArrayMaxSize,
   ArrayMinSize,
   ArrayUnique,
   IsArray,
@@ -9,6 +10,8 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  IsUUID,
+  MaxLength,
   Min,
   MinLength,
   ValidateIf,
@@ -69,6 +72,21 @@ export class CreateQuestionDto {
   @IsString()
   @MinLength(5)
   explanation?: string;
+
+  /** Why each option is right or wrong, in option order; "" where there is nothing to say. */
+  @ApiProperty({ type: [String], required: false })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @IsString({ each: true })
+  @MaxLength(1000, { each: true })
+  optionFeedback?: string[];
+
+  /** The lesson to point a student back to after a wrong answer. null clears it. */
+  @ApiProperty({ required: false, nullable: true })
+  @IsOptional()
+  @IsUUID()
+  reviewTopicId?: string | null;
 
   // Subjective fields
   @ApiProperty({ required: false })

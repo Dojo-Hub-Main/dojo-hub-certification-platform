@@ -30,8 +30,11 @@ export class QuizzesController {
   constructor(private readonly quizzesService: QuizzesService) {}
 
   @Get('modules/:moduleId')
-  getModuleQuiz(@Param('moduleId') moduleId: string) {
-    return this.quizzesService.getModuleQuiz(moduleId);
+  getModuleQuiz(
+    @CurrentUser() actor: RequestUser,
+    @Param('moduleId') moduleId: string,
+  ) {
+    return this.quizzesService.getModuleQuiz(actor, moduleId);
   }
 
   @Get('tracks/:trackId/assessment')
