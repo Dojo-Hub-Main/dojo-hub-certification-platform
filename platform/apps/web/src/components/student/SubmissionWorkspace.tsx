@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle, Clock, Plus, Trash2, XCircle } from 'lucide-react';
+import { CheckCircle, ChevronDown, Clock, Download, ExternalLink, FileText, Lock, Plus, Trash2, XCircle } from 'lucide-react';
 import { StoredFileKind, SubmissionDto } from '@dojo-hub/shared';
 import { api, ApiError } from '@/lib/api-client';
 import { Button } from '../ui/Button';
@@ -52,26 +52,27 @@ export function SubmissionWorkspace({
   });
 
   if (existing?.status === 'APPROVED' || existing?.status === 'PENDING') {
+    const pending = existing.status === 'PENDING';
     return (
       <div className="bg-navy-50 rounded-2xl border border-navy-200 p-5 space-y-3">
         <div className="flex items-center gap-2">
-          {existing.status === 'APPROVED' ? (
-            <CheckCircle className="w-5 h-5 text-green-600" />
-          ) : (
+          {pending ? (
             <Clock className="w-5 h-5 text-navy-600 animate-pulse" />
+          ) : (
+            <CheckCircle className="w-5 h-5 text-green-600" />
           )}
-          <h4 className="font-bold text-sm text-navy-950">
-            {existing.status === 'APPROVED' ? 'Competency Verified' : 'Under Active Review'}
-          </h4>
+          <h4 className="font-bold text-sm text-navy-950">{pending ? 'Under Active Review' : 'Competency Verified'}</h4>
         </div>
-        <p className="text-xs text-navy-600">{existing.submissionText}</p>
-        {existing.status === 'APPROVED' && existing.feedback && (
+        {!pending && existing.feedback && (
           <div className="bg-white rounded-lg border border-navy-200 p-3 text-xs">
             <p className="font-bold text-navy-500 mb-1">Supervisor Feedback ({existing.score}%)</p>
             <p className="text-navy-600">{existing.feedback}</p>
             <p className="text-[12px] text-navy-400 mt-1">— {existing.evaluatorName}</p>
           </div>
         )}
+        {/* Open while it is being reviewed — that is when a student most wants to check
+            what they sent. Folded away once there is a verdict to read first. */}
+        <SubmittedEvidence submission={existing} defaultOpen={pending} />
       </div>
     );
   }
@@ -86,6 +87,9 @@ export function SubmissionWorkspace({
             <XCircle className="w-3.5 h-3.5" /> Revision Requested
           </div>
           <p className="text-crimson-600">{lastRejected.feedback}</p>
+          <div className="pt-1">
+            <SubmittedEvidence submission={lastRejected} title="View what you submitted last time" />
+          </div>
         </div>
       )}
 
@@ -175,5 +179,114 @@ export function SubmissionWorkspace({
         Submit for Review
       </Button>
     </div>
+  );
+}
+
+/** Only real web addresses become links; anything else is shown as plain text. */
+function isWebUrl(url: string) {
+  return /^https?:\/\//i.test(url.trim());
+}
+
+function formatSize(bytes: number) {
+  return bytes >= 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
+/**
+ * A read-only copy of a submission as the reviewer receives it: notes, links, documents
+ * and demo video. Nothing here can be changed — a submission is fixed once sent.
+ */
+function SubmittedEvidence({
+  submission,
+  defaultOpen = false,
+  title = 'View your submission',
+}: {
+  submission: SubmissionDto;
+  defaultOpen?: boolean;
+  title?: string;
+}) {
+  const documents = submission.files.filter((f) => f.kind === StoredFileKind.DOCUMENT);
+  const videos = submission.files.filter((f) => f.kind === StoredFileKind.VIDEO);
+  const submittedOn = new Date(submission.submittedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+
+  return (
+    <details open={defaultOpen} className="group rounded-xl border border-navy-200 bg-white">
+      <summary className="flex items-center justify-between gap-2 px-3 py-2.5 cursor-pointer list-none text-xs font-semibold text-navy-800 [&::-webkit-details-marker]:hidden">
+        <span>{title}</span>
+        <ChevronDown className="w-4 h-4 text-navy-400 transition-transform group-open:rotate-180" />
+      </summary>
+
+      <div className="border-t border-navy-100 px-3 py-3 space-y-4 text-xs">
+        <p className="flex items-center gap-1.5 text-navy-500">
+          <Lock className="w-3.5 h-3.5 shrink-0" /> Submitted {submittedOn} · can&apos;t be edited after submission
+        </p>
+
+        <section className="space-y-1">
+          <h5 className="text-[11px] font-mono uppercase tracking-wider font-bold text-navy-500">Notes</h5>
+          <p className="text-navy-700 whitespace-pre-wrap">{submission.submissionText}</p>
+        </section>
+
+        {submission.links.length > 0 && (
+          <section className="space-y-1.5">
+            <h5 className="text-[11px] font-mono uppercase tracking-wider font-bold text-navy-500">Evidence links</h5>
+            <ul className="space-y-1.5">
+              {submission.links.map((link, i) => (
+                <li key={i} className="rounded-lg border border-navy-100 px-3 py-2">
+                  {isWebUrl(link.url) ? (
+                    <a
+                      href={link.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1.5 font-semibold text-crimson-700 hover:underline break-all"
+                    >
+                      {link.url}
+                      <ExternalLink className="w-3 h-3 shrink-0" />
+                    </a>
+                  ) : (
+                    <span className="font-semibold text-navy-800 break-all">{link.url}</span>
+                  )}
+                  {link.description && <p className="text-navy-500 mt-0.5">{link.description}</p>}
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        {documents.length > 0 && (
+          <section className="space-y-1.5">
+            <h5 className="text-[11px] font-mono uppercase tracking-wider font-bold text-navy-500">Documents</h5>
+            <ul className="space-y-1.5">
+              {documents.map((doc) => (
+                <li key={doc.id}>
+                  <a
+                    href={doc.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    download={doc.originalName}
+                    className="flex items-center gap-2 rounded-lg border border-navy-100 px-3 py-2 hover:border-crimson-300"
+                  >
+                    <FileText className="w-4 h-4 text-navy-500 shrink-0" />
+                    <span className="min-w-0 flex-1 truncate font-semibold text-navy-800">{doc.originalName}</span>
+                    <span className="text-navy-400 shrink-0">{formatSize(doc.sizeBytes)}</span>
+                    <Download className="w-3.5 h-3.5 text-navy-400 shrink-0" />
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        {videos.length > 0 && (
+          <section className="space-y-1.5">
+            <h5 className="text-[11px] font-mono uppercase tracking-wider font-bold text-navy-500">Demo video</h5>
+            {videos.map((video) => (
+              <div key={video.id} className="space-y-1">
+                <video src={video.url} controls preload="metadata" className="w-full rounded-lg bg-black aspect-video" />
+                <p className="text-navy-400 truncate">{video.originalName}</p>
+              </div>
+            ))}
+          </section>
+        )}
+      </div>
+    </details>
   );
 }
