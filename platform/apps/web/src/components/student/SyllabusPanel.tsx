@@ -20,7 +20,7 @@ const STATUS_ICON: Record<TopicStatus, React.ReactNode> = {
   approved: <CheckCircle2 className="w-4 h-4 text-green-600" />,
   pending: <Clock className="w-4 h-4 text-navy-600 animate-pulse" />,
   rejected: <AlertCircle className="w-4 h-4 text-red-500" />,
-  watched: <CheckCircle2 className="w-4 h-4 text-green-300" />,
+  watched: <CheckCircle2 className="w-4 h-4 text-green-600" />,
   none: <Circle className="w-4 h-4 text-navy-300" />,
 };
 

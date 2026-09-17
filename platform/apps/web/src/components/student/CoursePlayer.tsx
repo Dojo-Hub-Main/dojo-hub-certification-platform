@@ -9,7 +9,7 @@ import { api } from '@/lib/api-client';
 import { useMyEnrollments } from '@/lib/hooks';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
-import { VideoPlayer } from './VideoPlayer';
+import { UpNext, VideoPlayer } from './VideoPlayer';
 import { LessonResources } from './LessonResources';
 import { SubmissionWorkspace } from './SubmissionWorkspace';
 import { SyllabusPanel } from './SyllabusPanel';
@@ -38,6 +38,9 @@ export function CoursePlayer({ trackId }: { trackId: string }) {
   const [selectedModuleId, setSelectedModuleId] = useState<string | null>(null);
   const [confirmUnenroll, setConfirmUnenroll] = useState(false);
   const [quizModal, setQuizModal] = useState<{ type: AttemptTargetType; fetchParam: string } | null>(null);
+  // Set only when a lesson is reached by finishing the one before it, so that lesson starts
+  // playing by itself; choosing a lesson from the syllabus leaves the student to press play.
+  const [autoPlayTopicId, setAutoPlayTopicId] = useState<string | null>(null);
 
   const allTopics = track?.modules.flatMap((m) => m.topics) ?? [];
   const topiclessModules = track?.modules.filter((m) => m.topics.length === 0) ?? [];
@@ -114,6 +117,35 @@ export function CoursePlayer({ trackId }: { trackId: string }) {
   }
 
   const isEnrolled = !!enrollment;
+
+  /**
+   * What follows a lesson, as on LinkedIn Learning: the next lesson in the module, or — at
+   * the end of a module — its chapter quiz if it has one, otherwise the first lesson of
+   * the next module. Nothing after the course's last lesson.
+   */
+  const nextAfter = (topicId: string): { upNext: UpNext; go: () => void } | null => {
+    const mod = track.modules.find((m) => m.topics.some((t) => t.id === topicId));
+    if (!mod) return null;
+    const lastInModule = mod.topics[mod.topics.length - 1]?.id === topicId;
+    if (lastInModule && mod.quizEnabled && mod.hasQuiz) {
+      return {
+        upNext: { kind: 'quiz', title: `${mod.title} quiz` },
+        go: () => setQuizModal({ type: 'MODULE_QUIZ', fetchParam: mod.id }),
+      };
+    }
+    const at = allTopics.findIndex((t) => t.id === topicId);
+    const following = at >= 0 ? allTopics[at + 1] : undefined;
+    if (!following) return null;
+    return {
+      upNext: { kind: 'lesson', title: following.title },
+      go: () => {
+        setSelectedModuleId(null);
+        setSelectedTopicId(following.id);
+        setAutoPlayTopicId(following.id);
+      },
+    };
+  };
+  const next = selectedTopic && isEnrolled ? nextAfter(selectedTopic.id) : null;
 
   // Mirrors the rule the API enforces: an assessment-backed course is finished by passing
   // it (which sets the status), and a course without one is finished when every lesson is
@@ -198,6 +230,7 @@ export function CoursePlayer({ trackId }: { trackId: string }) {
           onSelectTopic={(topic) => {
             setSelectedModuleId(null);
             setSelectedTopicId(topic.id);
+            setAutoPlayTopicId(null);
           }}
           onSelectModule={(moduleId) => {
             setSelectedTopicId(null);
@@ -216,7 +249,17 @@ export function CoursePlayer({ trackId }: { trackId: string }) {
                   key={selectedTopic.id}
                   topic={selectedTopic}
                   watched={watchedIds.has(selectedTopic.id)}
-                  onWatched={() => markWatched.mutate(selectedTopic.id)}
+                  onCompleted={() => {
+                    // Pin the lesson on screen first. Without an explicit choice the page
+                    // shows the first unwatched lesson, which becomes the next one the moment
+                    // this is recorded — jumping away before "Up next" can run.
+                    setSelectedModuleId(null);
+                    setSelectedTopicId(selectedTopic.id);
+                    markWatched.mutate(selectedTopic.id);
+                  }}
+                  upNext={next?.upNext ?? null}
+                  onAdvance={next?.go}
+                  autoPlay={autoPlayTopicId === selectedTopic.id}
                 />
                 <LessonResources resources={selectedTopic.resources} documents={selectedTopic.documents} />
                 <SubmissionWorkspace topicId={selectedTopic.id} topicTitle={selectedTopic.title} />
