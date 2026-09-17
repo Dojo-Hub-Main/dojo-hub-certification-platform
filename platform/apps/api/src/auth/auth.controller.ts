@@ -22,6 +22,7 @@ import { UpdateProfileDto } from './dto/update-profile.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { ResendVerificationDto, VerifyEmailDto } from './dto/verify-email.dto';
 import { ForgotPasswordDto, ResetPasswordDto } from './dto/reset-password.dto';
+import { SwitchWorkspaceDto } from './dto/switch-workspace.dto';
 
 function getCookie(req: Request, name: string): string | undefined {
   return (req.cookies as Record<string, string> | undefined)?.[name];
@@ -129,7 +130,31 @@ export class AuthController {
   @ApiBearerAuth()
   @Get('me')
   me(@CurrentUser() user: RequestUser) {
-    return this.authService.me(user.id);
+    return this.authService.me(user.id, user.role);
+  }
+
+  /** Changes which of the account's roles this session acts as. */
+  @ApiBearerAuth()
+  @Post('switch-workspace')
+  @HttpCode(HttpStatus.OK)
+  async switchWorkspace(
+    @CurrentUser() user: RequestUser,
+    @Body() dto: SwitchWorkspaceDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const session = await this.authService.switchWorkspace(
+      user,
+      dto.role,
+      getCookie(req, 'refresh_token'),
+    );
+    this.setSessionCookies(
+      res,
+      session.accessToken,
+      session.refreshToken,
+      session.refreshTtlMs,
+    );
+    return { user: session.user };
   }
 
   @ApiBearerAuth()

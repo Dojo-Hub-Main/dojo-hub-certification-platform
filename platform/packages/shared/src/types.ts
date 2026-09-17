@@ -21,7 +21,10 @@ export interface PublicUser {
   id: string;
   name: string;
   email: string;
+  /** The workspace the current session is acting as. */
   role: UserRole;
+  /** Every role the account holds. */
+  roles?: UserRole[];
   status: AccountStatus;
   createdAt: string;
 }

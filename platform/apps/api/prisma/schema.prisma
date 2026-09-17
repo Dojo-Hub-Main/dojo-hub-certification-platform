@@ -125,7 +125,11 @@ model User {
   passwordResetSentAt DateTime?
   /// Opt-out for non-transactional email (new course announcements). On by default.
   emailNotifications Boolean  @default(true)
+  /// The default workspace, kept equal to the highest role in `roles` so the previous
+  /// release still reads a sensible role if a deploy is rolled back.
   role         UserRole
+  /// Every role the account holds — any mix of STUDENT, EVALUATOR and ADMIN.
+  roles        UserRole[]    @default([])
   status       AccountStatus @default(ACTIVE)
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
@@ -154,6 +158,8 @@ model RefreshToken {
   tokenHash String   @unique
   expiresAt DateTime
   revoked   Boolean  @default(false)
+  /// The workspace this session is acting as, so a refresh keeps the person where they were.
+  activeRole UserRole?
   createdAt DateTime @default(now())
 
   @@index([userId])

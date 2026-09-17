@@ -19,6 +19,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { EnrollmentsService } from '../enrollments/enrollments.service';
 import { AiGradingService } from '../ai-grading/ai-grading.service';
 import { RequestUser } from '../common/types/request-user.interface';
+import { rolesOf } from '../common/roles';
 import {
   CreateModuleQuizDto,
   CreateTrackAssessmentDto,
@@ -779,7 +780,9 @@ export class QuizzesService {
         id: studentUser.id,
         name: studentUser.name,
         email: studentUser.email,
-        role: studentUser.role,
+        // The attempt was taken as a student, whatever else the account can do.
+        role: UserRole.STUDENT,
+        roles: rolesOf(studentUser),
       },
       quizMeta,
       attempt.type,

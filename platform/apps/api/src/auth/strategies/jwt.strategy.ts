@@ -5,7 +5,9 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 import { Request } from 'express';
 import { AccountStatus } from '@dojo-hub/shared';
 import { PrismaService } from '../../prisma/prisma.service';
+import { UserRole } from '@dojo-hub/shared';
 import { RequestUser } from '../../common/types/request-user.interface';
+import { primaryRole, rolesOf } from '../../common/roles';
 
 function extractFromCookie(req: Request): string | null {
   const cookies = req?.cookies as Record<string, string> | undefined;
@@ -28,7 +30,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     });
   }
 
-  async validate(payload: { sub: string }): Promise<RequestUser> {
+  async validate(payload: { sub: string; role?: UserRole }): Promise<RequestUser> {
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
     });
@@ -37,6 +39,16 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       throw new UnauthorizedException('Account is not active.');
     }
 
-    return { id: user.id, email: user.email, name: user.name, role: user.role };
+    // The workspace comes from the token, but is checked against the account's roles as
+    // they are now. A role an administrator has removed stops working on the next request
+    // rather than lasting until the token expires; the client then refreshes into a role
+    // the account still holds.
+    const roles = rolesOf(user);
+    const workspace = payload.role ?? primaryRole(roles);
+    if (!roles.includes(workspace)) {
+      throw new UnauthorizedException('Your access has changed. Please sign in again.');
+    }
+
+    return { id: user.id, email: user.email, name: user.name, role: workspace, roles };
   }
 }

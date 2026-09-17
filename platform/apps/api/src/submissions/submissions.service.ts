@@ -169,7 +169,9 @@ export class SubmissionsService {
       }),
       this.prisma.user.findMany({
         where: {
-          role: { in: [UserRole.EVALUATOR, UserRole.ADMIN] },
+          roles: { hasSome: [UserRole.EVALUATOR, UserRole.ADMIN] },
+          // Nobody is told to review their own work.
+          id: { not: actor.id },
           status: AccountStatus.ACTIVE,
         },
         select: { id: true },

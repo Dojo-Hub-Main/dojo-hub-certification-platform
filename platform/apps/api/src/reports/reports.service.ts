@@ -34,7 +34,7 @@ export class ReportsService {
 
     const [users, tracks, submissions, credentials, enrolments] = await Promise.all([
       this.prisma.user.findMany({
-        select: { id: true, name: true, email: true, role: true, createdAt: true },
+        select: { id: true, name: true, email: true, role: true, roles: true, createdAt: true },
         orderBy: { createdAt: 'asc' },
       }),
       this.prisma.track.findMany({
@@ -133,9 +133,10 @@ export class ReportsService {
       certificatesAwarded,
       certificatesPending,
     ] = await Promise.all([
-      this.prisma.user.count({ where: { role: UserRole.STUDENT } }),
-      this.prisma.user.count({ where: { role: UserRole.EVALUATOR } }),
-      this.prisma.user.count({ where: { role: UserRole.ADMIN } }),
+      // Counted by role held, so one person with several roles appears in each count.
+      this.prisma.user.count({ where: { roles: { has: UserRole.STUDENT } } }),
+      this.prisma.user.count({ where: { roles: { has: UserRole.EVALUATOR } } }),
+      this.prisma.user.count({ where: { roles: { has: UserRole.ADMIN } } }),
       this.prisma.user.count({ where: { status: AccountStatus.SUSPENDED } }),
       this.prisma.submission.count({
         where: { status: SubmissionStatus.PENDING },
@@ -283,7 +284,7 @@ export class ReportsService {
     const [metrics, students, auditLogCount] = await Promise.all([
       this.platformMetrics(),
       this.prisma.user.findMany({
-        where: { role: UserRole.STUDENT },
+        where: { roles: { has: UserRole.STUDENT } },
         include: { studentProfile: { include: { currentLevel: true } } },
         orderBy: { createdAt: 'asc' },
       }),

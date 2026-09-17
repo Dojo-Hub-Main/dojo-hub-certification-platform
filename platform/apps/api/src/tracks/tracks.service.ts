@@ -600,7 +600,7 @@ export class TracksService {
       const recipients = await this.prisma.user.findMany({
         where: {
           id: { in: studentIds },
-          role: UserRole.STUDENT,
+          roles: { has: UserRole.STUDENT },
           status: AccountStatus.ACTIVE,
           emailNotifications: true,
           emailVerifiedAt: { not: null },

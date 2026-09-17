@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -13,6 +14,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { EmailService } from '../email/email.service';
 import { RequestUser } from '../common/types/request-user.interface';
+import { primaryRole, rolesOf } from '../common/roles';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
@@ -193,6 +195,7 @@ export class AuthService {
           passwordHash,
           // Always a student, whatever the request says — see RegisterDto.
           role: UserRole.STUDENT,
+          roles: [UserRole.STUDENT],
           status: AccountStatus.ACTIVE,
           verificationToken,
           verificationSentAt: new Date(),
@@ -246,11 +249,16 @@ export class AuthService {
       );
     }
 
+    // Signing in opens the account's default workspace; someone holding several roles
+    // then picks one on the workspace screen, which calls switchWorkspace.
     const requestUser = this.toRequestUser(user);
 
     await this.auditService.log({
       actor: requestUser,
-      action: `Logged into secure session with role: ${user.role}`,
+      action:
+        requestUser.roles.length > 1
+          ? `Signed in (roles: ${requestUser.roles.join(', ')})`
+          : `Logged into secure session with role: ${requestUser.role}`,
       entityType: 'User',
       entityId: user.id,
       severity: AuditLogSeverity.SUCCESS,
@@ -284,7 +292,42 @@ export class AuthService {
       data: { revoked: true },
     });
 
-    return this.issueSession(this.toRequestUser(user));
+    // Stay in the same workspace — unless that role has since been removed, in which case
+    // the session falls back to the account's default workspace.
+    return this.issueSession(this.toRequestUser(user, stored.activeRole ?? undefined));
+  }
+
+  /**
+   * Moves a signed-in session into another of the account's workspaces without asking for
+   * the password again. The roles are read fresh, so only a role the account holds right
+   * now can be chosen; the old refresh token is retired so the previous workspace's
+   * session cannot be resumed alongside the new one.
+   */
+  async switchWorkspace(
+    actor: RequestUser,
+    role: UserRole,
+    rawRefreshToken: string | undefined,
+  ) {
+    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: actor.id } });
+    if (!rolesOf(user).includes(role)) {
+      throw new ForbiddenException('Your account does not have access to that workspace.');
+    }
+
+    if (rawRefreshToken) {
+      await this.prisma.refreshToken.updateMany({
+        where: { tokenHash: this.hashToken(rawRefreshToken), userId: user.id },
+        data: { revoked: true },
+      });
+    }
+
+    const session = await this.issueSession(this.toRequestUser(user, role));
+    await this.auditService.log({
+      actor: session.user,
+      action: `Switched workspace to ${role}`,
+      entityType: 'User',
+      entityId: user.id,
+    });
+    return session;
   }
 
   async logout(rawRefreshToken: string | undefined) {
@@ -303,12 +346,13 @@ export class AuthService {
     });
   }
 
-  async me(userId: string) {
+  /** The account, reporting `role` as the session's current workspace alongside every role held. */
+  async me(userId: string, workspace: UserRole) {
     const user = await this.prisma.user.findUniqueOrThrow({
       where: { id: userId },
       include: { studentProfile: { include: { currentLevel: true } } },
     });
-    return this.omitPasswordHash(user);
+    return { ...this.omitPasswordHash(user), role: workspace, roles: rolesOf(user) };
   }
 
   async updateProfile(userId: string, dto: UpdateProfileDto) {
@@ -383,6 +427,7 @@ export class AuthService {
         userId: user.id,
         tokenHash: this.hashToken(rawRefreshToken),
         expiresAt: new Date(Date.now() + refreshTtlMs),
+        activeRole: user.role,
       },
     });
 
@@ -400,13 +445,17 @@ export class AuthService {
     return createHash('sha256').update(token).digest('hex');
   }
 
-  private toRequestUser(user: {
-    id: string;
-    email: string;
-    name: string;
-    role: UserRole;
-  }): RequestUser {
-    return { id: user.id, email: user.email, name: user.name, role: user.role };
+  /**
+   * The session identity for an account. `workspace` is honoured only if the account still
+   * holds that role; otherwise the session opens the account's default workspace.
+   */
+  private toRequestUser(
+    user: { id: string; email: string; name: string; role: UserRole; roles?: UserRole[] | null },
+    workspace?: UserRole,
+  ): RequestUser {
+    const roles = rolesOf(user);
+    const role = workspace && roles.includes(workspace) ? workspace : primaryRole(roles);
+    return { id: user.id, email: user.email, name: user.name, role, roles };
   }
 
   private parseTtlToMs(ttl: string): number {

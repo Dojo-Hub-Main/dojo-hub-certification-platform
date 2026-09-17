@@ -1,4 +1,14 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { UserRole } from '@dojo-hub/shared';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -7,6 +17,7 @@ import { RequestUser } from '../common/types/request-user.interface';
 import { UsersService } from './users.service';
 import { AdminResetPasswordDto } from './dto/reset-password.dto';
 import { ChangeRoleDto } from './dto/change-role.dto';
+import { RoleDto } from './dto/role.dto';
 import { ChangeEmailDto } from './dto/change-email.dto';
 
 @ApiTags('users')
@@ -44,6 +55,32 @@ export class UsersController {
     return this.usersService.adminResetPassword(actor, id, dto.newPassword);
   }
 
+  /** Adds a role to an account, keeping the ones it has. */
+  @Roles(UserRole.ADMIN)
+  @Post(':id/roles')
+  addRole(
+    @CurrentUser() actor: RequestUser,
+    @Param('id') id: string,
+    @Body() dto: RoleDto,
+  ) {
+    return this.usersService.addRole(actor, id, dto.role);
+  }
+
+  /** Removes one role from an account, keeping the rest. */
+  @Roles(UserRole.ADMIN)
+  @Delete(':id/roles/:role')
+  removeRole(
+    @CurrentUser() actor: RequestUser,
+    @Param('id') id: string,
+    @Param('role') role: string,
+  ) {
+    if (!(Object.values(UserRole) as string[]).includes(role)) {
+      throw new BadRequestException('Unknown role.');
+    }
+    return this.usersService.removeRole(actor, id, role as UserRole);
+  }
+
+  /** Superseded by the two endpoints above; kept while pages opened before them are still in use. */
   @Roles(UserRole.ADMIN)
   @Patch(':id/role')
   changeRole(

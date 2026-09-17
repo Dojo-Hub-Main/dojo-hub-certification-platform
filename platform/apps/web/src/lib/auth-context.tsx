@@ -9,7 +9,10 @@ export interface AuthUser {
   id: string;
   name: string;
   email: string;
+  /** The workspace this session is acting as — what every page checks. */
   role: UserRole;
+  /** Every role the account holds. More than one means the workspace chooser applies. */
+  roles?: UserRole[];
   status: 'ACTIVE' | 'SUSPENDED';
   /** Opt-out for course announcements; transactional email is always sent. */
   emailNotifications?: boolean;
@@ -25,6 +28,8 @@ interface AuthContextValue {
   /** Public sign-up always creates a student account. */
   register: (name: string, email: string, password: string) => Promise<AuthUser>;
   logout: () => Promise<void>;
+  /** Moves this session into another of the account's workspaces. */
+  switchWorkspace: (role: UserRole) => Promise<AuthUser>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -53,6 +58,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     mutationFn: () => api.post('/auth/logout'),
   });
 
+  const switchMutation = useMutation({
+    mutationFn: (role: UserRole) => api.post<{ user: AuthUser }>('/auth/switch-workspace', { role }),
+  });
+
   const login = useCallback(
     async (email: string, password: string) => {
       const { user } = await loginMutation.mutateAsync({ email, password });
@@ -73,6 +82,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return user;
     },
     [registerMutation],
+  );
+
+  const switchWorkspace = useCallback(
+    async (role: UserRole) => {
+      const { user } = await switchMutation.mutateAsync(role);
+      // Cached data belongs to the previous workspace; start clean in the new one.
+      queryClient.setQueryData(['me'], user);
+      await queryClient.invalidateQueries();
+      return user;
+    },
+    [switchMutation, queryClient],
   );
 
   const logout = useCallback(async () => {
@@ -98,6 +118,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         login,
         register,
         logout,
+        switchWorkspace,
       }}
     >
       {children}

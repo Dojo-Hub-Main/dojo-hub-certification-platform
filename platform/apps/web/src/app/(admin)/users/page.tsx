@@ -18,6 +18,7 @@ interface DirectoryEntry {
   name: string;
   email: string;
   role: UserRole;
+  roles?: UserRole[];
   status: 'ACTIVE' | 'SUSPENDED';
   createdAt: string;
   studentProfile?: { currentLevel: { name: string } } | null;
@@ -48,12 +49,18 @@ export default function AdminUsersPage() {
     queryFn: () => api.get<DirectoryEntry[]>(`/users?role=${role}&search=${encodeURIComponent(search)}`),
   });
 
-  const changeRole = useMutation({
-    mutationFn: ({ id, role: next }: { id: string; role: UserRole }) =>
-      api.patch(`/users/${id}/role`, { role: next }),
+  // Roles are a set now: adding one keeps the others, and removing one leaves the rest.
+  const addRole = useMutation({
+    mutationFn: ({ id, role: added }: { id: string; role: UserRole }) => api.post(`/users/${id}/roles`, { role: added }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['users', 'directory'] }),
-    onError: (e) => alert(e instanceof ApiError ? e.message : 'Failed to change role.'),
+    onError: (e) => alert(e instanceof ApiError ? e.message : 'Failed to add access.'),
   });
+  const removeRole = useMutation({
+    mutationFn: ({ id, role: removed }: { id: string; role: UserRole }) => api.delete(`/users/${id}/roles/${removed}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['users', 'directory'] }),
+    onError: (e) => alert(e instanceof ApiError ? e.message : 'Failed to remove access.'),
+  });
+  const rolesOf = (u: DirectoryEntry) => (u.roles?.length ? u.roles : [u.role]);
 
   const changeEmail = useMutation({
     mutationFn: ({ id, email }: { id: string; email: string }) =>
@@ -142,9 +149,9 @@ export default function AdminUsersPage() {
                 </td>
                 <td className="px-6 py-4 text-xs text-navy-500 font-mono">{new Date(u.createdAt).toLocaleDateString()}</td>
                 <td className="px-6 py-4 text-xs text-navy-600 space-y-0.5">
-                  {u.role === 'ADMIN' ? (
+                  {role === 'ADMIN' ? (
                     <p className="text-navy-400">Authors courses and manages accounts.</p>
-                  ) : u.role === 'STUDENT' ? (
+                  ) : role === 'STUDENT' ? (
                     <>
                       <p>
                         Level: <strong className="text-navy-950">{u.studentProfile?.currentLevel.name}</strong>
@@ -165,46 +172,75 @@ export default function AdminUsersPage() {
                 </td>
                 <td className="px-6 py-4">
                   <div className="flex items-center justify-end gap-2 flex-wrap">
-                    {/* Registration only issues Student and Evaluator accounts, so this
-                        select is the only route to an admin account. Changing your own
-                        role is blocked here and in the API. */}
-                    <label className="flex items-center gap-2">
-                      <span className="text-[11px] font-mono uppercase tracking-[0.12em] font-bold text-navy-500">
-                        Role
-                      </span>
-                    <select
-                      aria-label={`Change role for ${u.name}`}
-                      className="input py-2 text-xs leading-5 w-[12.5rem] cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
-                      value={u.role}
-                      disabled={u.id === me?.id || changeRole.isPending}
-                      title={u.id === me?.id ? 'You cannot change your own role' : undefined}
-                      onChange={(e) => {
-                        const next = e.target.value as UserRole;
-                        if (next === u.role) return;
-                        if (
-                          confirm(
-                            `Change ${u.name} (${u.email}) from ${ROLE_LABEL[u.role]} to ${ROLE_LABEL[next]}?\n\n` +
-                              `They will be signed out and must sign in again.` +
-                              (next === UserRole.ADMIN
-                                ? '\n\nPlatform Admins can create courses and manage every account.'
-                                : ''),
-                          )
-                        ) {
-                          changeRole.mutate({ id: u.id, role: next });
-                        } else {
-                          e.target.value = u.role;
-                        }
-                      }}
-                    >
-                      {ROLE_OPTIONS.map((o) => (
-                        <option key={o.value} value={o.value}>
-                          {ROLE_LABEL[o.value]}
-                        </option>
-                      ))}
-                    </select>
-                    </label>
+                    {/* Each account holds a set of roles. Student and Admin can be added here;
+                        Evaluator is given through an invitation the person accepts, so it can
+                        only be removed here. The API enforces the same rules. */}
+                    <div className="flex items-center gap-1.5 flex-wrap justify-end" aria-label={`Access for ${u.name}`}>
+                      {rolesOf(u).map((held) => {
+                        const own = u.id === me?.id && held === UserRole.ADMIN;
+                        const only = rolesOf(u).length === 1;
+                        return (
+                          <span
+                            key={held}
+                            className="inline-flex items-center gap-1 rounded-full border border-navy-200 bg-navy-50 pl-2.5 pr-1 py-0.5 text-[12px] font-semibold text-navy-800"
+                          >
+                            {ROLE_LABEL[held]}
+                            <button
+                              type="button"
+                              aria-label={`Remove ${ROLE_LABEL[held]} access from ${u.name}`}
+                              disabled={own || only || removeRole.isPending}
+                              title={
+                                own
+                                  ? 'You cannot remove your own administrator access'
+                                  : only
+                                    ? 'An account needs at least one role'
+                                    : `Remove ${ROLE_LABEL[held]} access`
+                              }
+                              onClick={() => {
+                                if (
+                                  confirm(
+                                    `Remove ${ROLE_LABEL[held]} access from ${u.name} (${u.email})?\n\n` +
+                                      `Their other access stays as it is.`,
+                                  )
+                                ) {
+                                  removeRole.mutate({ id: u.id, role: held });
+                                }
+                              }}
+                              className="w-5 h-5 rounded-full flex items-center justify-center text-navy-400 hover:text-crimson-600 hover:bg-crimson-50 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-navy-400 disabled:cursor-not-allowed"
+                            >
+                              ×
+                            </button>
+                          </span>
+                        );
+                      })}
+                      {[UserRole.STUDENT, UserRole.ADMIN]
+                        .filter((r) => !rolesOf(u).includes(r))
+                        .map((missing) => (
+                          <button
+                            key={missing}
+                            type="button"
+                            disabled={addRole.isPending || u.status === 'SUSPENDED'}
+                            onClick={() => {
+                              if (
+                                confirm(
+                                  `Give ${u.name} (${u.email}) ${ROLE_LABEL[missing]} access?\n\n` +
+                                    `They keep the access they already have and can switch workspace from their account menu.` +
+                                    (missing === UserRole.ADMIN
+                                      ? '\n\nPlatform Admins can create courses and manage every account.'
+                                      : ''),
+                                )
+                              ) {
+                                addRole.mutate({ id: u.id, role: missing });
+                              }
+                            }}
+                            className="rounded-full border border-dashed border-navy-300 px-2.5 py-0.5 text-[12px] font-semibold text-navy-500 hover:border-crimson-400 hover:text-crimson-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            + {ROLE_LABEL[missing]}
+                          </button>
+                        ))}
+                    </div>
 
-                    {u.role !== 'ADMIN' && (u.status === 'ACTIVE' ? (
+                    {!rolesOf(u).includes(UserRole.ADMIN) && (u.status === 'ACTIVE' ? (
                       <Button size="sm" variant="secondary" loading={suspend.isPending} onClick={() => suspend.mutate(u.id)}>
                         Suspend
                       </Button>
@@ -252,7 +288,7 @@ Minimum 8 characters. Share it with them directly — it is not emailed.`,
                     >
                       Reset Password
                     </Button>
-                    {u.role !== 'ADMIN' && (
+                    {!rolesOf(u).includes(UserRole.ADMIN) && (
                       <Button
                         size="sm"
                         variant="danger"

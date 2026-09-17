@@ -79,7 +79,13 @@ function LoginForm() {
     setResendState('idle');
     try {
       const user = await login(values.email, values.password);
-      router.replace(safeNext(params.get('next')) ?? ROLE_HOME[user.role] ?? '/home');
+      const next = safeNext(params.get('next'));
+      // More than one role: pick a workspace first, carrying the destination along.
+      if ((user.roles?.length ?? 0) > 1) {
+        router.replace(`/choose-workspace${next ? `?next=${encodeURIComponent(next)}` : ''}`);
+        return;
+      }
+      router.replace(next ?? ROLE_HOME[user.role] ?? '/home');
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Something went wrong. Please try again.');
     }

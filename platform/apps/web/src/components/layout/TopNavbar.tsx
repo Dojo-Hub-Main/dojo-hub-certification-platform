@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Bell, ChevronDown, LogOut, Menu, Settings } from 'lucide-react';
+import { ArrowLeftRight, Bell, ChevronDown, LogOut, Menu, Settings } from 'lucide-react';
 import { NotificationDto } from '@dojo-hub/shared';
 import { useAuth } from '@/lib/auth-context';
 import { api } from '@/lib/api-client';
@@ -184,6 +184,18 @@ export function TopNavbar({
                 <Settings className="w-4 h-4" />
                 <span>Account settings</span>
               </button>
+              {(user.roles?.length ?? 0) > 1 && (
+                <button
+                  onClick={() => {
+                    setProfileOpen(false);
+                    router.push('/choose-workspace?from=menu');
+                  }}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-xs text-navy-600 hover:bg-black/[0.03] hover:text-navy-950 font-semibold transition-colors text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-crimson-500/50"
+                >
+                  <ArrowLeftRight className="w-4 h-4" />
+                  <span>Switch workspace</span>
+                </button>
+              )}
               <button
                 onClick={async () => {
                   await logout();

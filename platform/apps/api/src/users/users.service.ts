@@ -3,7 +3,9 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
+  OnModuleInit,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import {
@@ -18,6 +20,7 @@ import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EmailService } from '../email/email.service';
 import { RequestUser } from '../common/types/request-user.interface';
+import { primaryRole, rolesOf, sortRoles } from '../common/roles';
 
 /** Human-readable role names, so audit entries and emails read like the UI does. */
 const ROLE_LABEL: Record<UserRole, string> = {
@@ -27,7 +30,9 @@ const ROLE_LABEL: Record<UserRole, string> = {
 };
 
 @Injectable()
-export class UsersService {
+export class UsersService implements OnModuleInit {
+  private readonly logger = new Logger(UsersService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
@@ -35,12 +40,30 @@ export class UsersService {
     private readonly emailService: EmailService,
   ) {}
 
+  /**
+   * Fills in the role set for any account that has none. The migration does this for every
+   * account that existed; this catches one created by the previous release in the moments
+   * the two versions overlap during a deploy. Harmless when there is nothing to fix.
+   */
+  async onModuleInit() {
+    try {
+      const fixed = await this.prisma.$executeRaw`
+        UPDATE "User" SET "roles" = ARRAY["role"]
+        WHERE "roles" IS NULL OR cardinality("roles") = 0`;
+      if (fixed > 0) this.logger.log(`Filled in roles for ${fixed} account(s).`);
+    } catch (error) {
+      this.logger.error('Could not backfill account roles', error as Error);
+    }
+  }
+
   async directory(role: UserRole | undefined, search: string | undefined) {
     const users = await this.prisma.user.findMany({
       where: {
+        // Listed under every role held, so someone who is both a student and an
+        // evaluator appears on both tabs.
         ...(role
-          ? { role }
-          : { role: { in: [UserRole.STUDENT, UserRole.EVALUATOR] } }),
+          ? { roles: { has: role } }
+          : { roles: { hasSome: [UserRole.STUDENT, UserRole.EVALUATOR] } }),
         ...(search
           ? {
               OR: [
@@ -56,13 +79,16 @@ export class UsersService {
 
     // Pending submissions sit in one shared queue any evaluator (or admin) can act on —
     // there's no per-evaluator assignment, so this count is the same for every supervisor.
-    const pendingPlatformWide = users.some((u) => u.role === UserRole.EVALUATOR)
+    const pendingPlatformWide = users.some((u) => rolesOf(u).includes(UserRole.EVALUATOR))
       ? await this.prisma.submission.count({ where: { status: 'PENDING' } })
       : 0;
 
     return Promise.all(
       users.map(async (user) => {
-        if (user.role === UserRole.STUDENT) {
+        const roles = rolesOf(user);
+        // Stats describe the account in the role being browsed.
+        const view = role ?? primaryRole(roles);
+        if (view === UserRole.STUDENT) {
           const [certificates, cumulativeEnrollments, activeEnrollments] =
             await Promise.all([
               this.prisma.credential.count({ where: { studentId: user.id } }),
@@ -73,12 +99,13 @@ export class UsersService {
             ]);
           return {
             ...user,
+            roles,
             passwordHash: undefined,
             stats: { certificates, cumulativeEnrollments, activeEnrollments },
           };
         }
 
-        if (user.role === UserRole.EVALUATOR) {
+        if (view === UserRole.EVALUATOR) {
           const evaluationsDone = await this.prisma.submission.count({
             where: {
               evaluatorId: user.id,
@@ -87,12 +114,13 @@ export class UsersService {
           });
           return {
             ...user,
+            roles,
             passwordHash: undefined,
             stats: { evaluationsDone, pendingPlatformWide },
           };
         }
 
-        return { ...user, passwordHash: undefined, stats: {} };
+        return { ...user, roles, passwordHash: undefined, stats: {} };
       }),
     );
   }
@@ -105,7 +133,7 @@ export class UsersService {
 
   async suspend(actor: RequestUser, targetId: string) {
     const target = await this.findOrThrow(targetId);
-    if (target.role === UserRole.ADMIN) {
+    if (rolesOf(target).includes(UserRole.ADMIN)) {
       throw new ForbiddenException(
         'Administrator accounts cannot be suspended.',
       );
@@ -175,6 +203,14 @@ export class UsersService {
    * anyone, which would leave nobody able to author courses or manage users.
    */
   async changeRole(actor: RequestUser, targetId: string, role: UserRole) {
+    // Kept only so an admin page opened before roles became a set keeps working during the
+    // release; the current page adds and removes roles with addRole / removeRole. It still
+    // replaces the whole set, as it always did, and still never creates an evaluator.
+    if (role === UserRole.EVALUATOR) {
+      throw new BadRequestException(
+        'Evaluator access is now given through an evaluator invitation. Refresh this page.',
+      );
+    }
     const target = await this.findOrThrow(targetId);
 
     if (target.id === actor.id) {
@@ -187,9 +223,9 @@ export class UsersService {
       throw new BadRequestException(`This account is already a ${ROLE_LABEL[role]}.`);
     }
 
-    if (target.role === UserRole.ADMIN) {
+    if (rolesOf(target).includes(UserRole.ADMIN)) {
       const admins = await this.prisma.user.count({
-        where: { role: UserRole.ADMIN, status: AccountStatus.ACTIVE },
+        where: { roles: { has: UserRole.ADMIN }, status: AccountStatus.ACTIVE },
       });
       if (admins <= 1) {
         throw new ForbiddenException(
@@ -198,7 +234,7 @@ export class UsersService {
       }
     }
 
-    await this.prisma.user.update({ where: { id: targetId }, data: { role } });
+    await this.prisma.user.update({ where: { id: targetId }, data: { role, roles: [role] } });
 
     // The old role is baked into the access token, so anything still holding one would
     // keep the previous permissions until it expired. Dropping the refresh tokens forces
@@ -236,6 +272,138 @@ export class UsersService {
     });
 
     return { success: true };
+  }
+
+  /**
+   * Gives an account another role without touching the ones it has — a student made an
+   * admin stays a student. The person switches between them from their account menu.
+   *
+   * Evaluator is deliberately not grantable here: it is given through an invitation the
+   * person accepts, so nobody becomes an evaluator without knowing.
+   */
+  async addRole(actor: RequestUser, targetId: string, role: UserRole) {
+    if (role === UserRole.EVALUATOR) {
+      throw new BadRequestException(
+        'Evaluator access is given through an evaluator invitation, so the person accepts it themselves.',
+      );
+    }
+    const target = await this.findOrThrow(targetId);
+    if (target.status === AccountStatus.SUSPENDED) {
+      throw new BadRequestException('Reactivate this account before changing its access.');
+    }
+    const roles = rolesOf(target);
+    if (roles.includes(role)) {
+      throw new BadRequestException(`This account already has ${ROLE_LABEL[role]} access.`);
+    }
+
+    const next = sortRoles([...roles, role]);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: targetId },
+        data: { roles: next, role: primaryRole(next) },
+      });
+      // A student needs a learning profile to enrol; accounts that started as something
+      // else never had one.
+      if (role === UserRole.STUDENT) {
+        const profile = await tx.studentProfile.findUnique({ where: { userId: targetId } });
+        if (!profile) {
+          const beginner = await tx.level.findFirstOrThrow({ orderBy: { order: 'asc' } });
+          await tx.studentProfile.create({
+            data: { userId: targetId, currentLevelId: beginner.id },
+          });
+        }
+      }
+    });
+
+    await this.auditService.log({
+      actor,
+      action: `Gave ${ROLE_LABEL[role]} access to "${target.name}" (${target.email})`,
+      entityType: 'User',
+      entityId: targetId,
+      severity: AuditLogSeverity.WARNING,
+    });
+
+    await this.notificationsService.notify({
+      userId: targetId,
+      type: NotificationType.ROLE_CHANGED,
+      title: `You now have ${ROLE_LABEL[role]} access`,
+      body: `A platform administrator added ${ROLE_LABEL[role]} access to your account. Choose "Switch workspace" in your account menu to open it.`,
+      email: {
+        subject: `You now have ${ROLE_LABEL[role]} access on Dojo Hub Learning Platform`,
+        block: {
+          heading: `You now have ${ROLE_LABEL[role]} access`,
+          intro: `A platform administrator added ${ROLE_LABEL[role]} access to your account. Everything you already had access to stays as it was.`,
+          facts: [{ label: 'Your access', value: next.map((r) => ROLE_LABEL[r]).join(', ') }],
+          outro: 'Sign in as usual and choose the workspace you want. If you were not expecting this, contact your platform administrator.',
+        },
+      },
+    });
+
+    return { success: true, roles: next };
+  }
+
+  /**
+   * Takes one role away and leaves the rest. A session working in that role is cut off on
+   * its next request (see JwtStrategy) and falls back to a role the account still holds.
+   */
+  async removeRole(actor: RequestUser, targetId: string, role: UserRole) {
+    const target = await this.findOrThrow(targetId);
+    const roles = rolesOf(target);
+    if (!roles.includes(role)) {
+      throw new BadRequestException(`This account does not have ${ROLE_LABEL[role]} access.`);
+    }
+    if (roles.length === 1) {
+      throw new BadRequestException(
+        'An account needs at least one role. Suspend or delete the account instead.',
+      );
+    }
+    if (role === UserRole.ADMIN) {
+      if (target.id === actor.id) {
+        throw new ForbiddenException(
+          'You cannot remove your own administrator access. Ask another administrator to do it.',
+        );
+      }
+      const admins = await this.prisma.user.count({
+        where: { roles: { has: UserRole.ADMIN }, status: AccountStatus.ACTIVE },
+      });
+      if (admins <= 1) {
+        throw new ForbiddenException(
+          'This is the last administrator account. Give another account administrator access first.',
+        );
+      }
+    }
+
+    const next = roles.filter((r) => r !== role);
+    await this.prisma.user.update({
+      where: { id: targetId },
+      data: { roles: next, role: primaryRole(next) },
+    });
+
+    await this.auditService.log({
+      actor,
+      action: `Removed ${ROLE_LABEL[role]} access from "${target.name}" (${target.email})`,
+      entityType: 'User',
+      entityId: targetId,
+      severity: AuditLogSeverity.WARNING,
+    });
+
+    await this.notificationsService.notify({
+      userId: targetId,
+      type: NotificationType.ROLE_CHANGED,
+      title: `Your ${ROLE_LABEL[role]} access was removed`,
+      body: `A platform administrator removed ${ROLE_LABEL[role]} access from your account. Your other access is unchanged.`,
+      email: {
+        subject: `Your ${ROLE_LABEL[role]} access on Dojo Hub Learning Platform was removed`,
+        block: {
+          heading: `Your ${ROLE_LABEL[role]} access was removed`,
+          intro: `A platform administrator removed ${ROLE_LABEL[role]} access from your account.`,
+          facts: [{ label: 'Your access now', value: next.map((r) => ROLE_LABEL[r]).join(', ') }],
+          outro: 'If you were not expecting this, contact your platform administrator.',
+        },
+      },
+    });
+
+    return { success: true, roles: next };
   }
 
   /**
@@ -313,13 +481,14 @@ export class UsersService {
 
   async terminate(actor: RequestUser, targetId: string) {
     const target = await this.findOrThrow(targetId);
-    if (target.role === UserRole.ADMIN) {
+    const targetRoles = rolesOf(target);
+    if (targetRoles.includes(UserRole.ADMIN)) {
       throw new ForbiddenException(
         'Administrator accounts cannot be terminated.',
       );
     }
 
-    if (target.role === UserRole.EVALUATOR) {
+    if (targetRoles.includes(UserRole.EVALUATOR)) {
       const [gradingHistory, signedCredentials] = await Promise.all([
         this.prisma.submission.count({ where: { evaluatorId: targetId } }),
         this.prisma.credential.count({
