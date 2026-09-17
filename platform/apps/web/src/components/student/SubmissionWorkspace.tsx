@@ -217,7 +217,9 @@ function SubmittedEvidence({
 
       <div className="border-t border-navy-100 px-3 py-3 space-y-4 text-xs">
         <p className="flex items-center gap-1.5 text-navy-500">
-          <Lock className="w-3.5 h-3.5 shrink-0" /> Submitted {submittedOn} · can&apos;t be edited after submission
+          <Lock className="w-3.5 h-3.5 shrink-0" />
+          {/* One text run: in a flex row, spaces between separate pieces of text can vanish. */}
+          <span>{`Submitted ${submittedOn} · can't be edited after submission`}</span>
         </p>
 
         <section className="space-y-1">
