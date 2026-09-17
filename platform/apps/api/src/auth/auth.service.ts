@@ -191,24 +191,23 @@ export class AuthService {
           name: dto.name.trim(),
           email: dto.email.toLowerCase(),
           passwordHash,
-          role: dto.role,
+          // Always a student, whatever the request says — see RegisterDto.
+          role: UserRole.STUDENT,
           status: AccountStatus.ACTIVE,
           verificationToken,
           verificationSentAt: new Date(),
         },
       });
 
-      if (dto.role === UserRole.STUDENT) {
-        const beginnerLevel = await tx.level.findFirstOrThrow({
-          orderBy: { order: 'asc' },
-        });
-        await tx.studentProfile.create({
-          data: {
-            userId: created.id,
-            currentLevelId: beginnerLevel.id,
-          },
-        });
-      }
+      const beginnerLevel = await tx.level.findFirstOrThrow({
+        orderBy: { order: 'asc' },
+      });
+      await tx.studentProfile.create({
+        data: {
+          userId: created.id,
+          currentLevelId: beginnerLevel.id,
+        },
+      });
 
       return created;
     });

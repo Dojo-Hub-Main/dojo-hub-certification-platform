@@ -22,7 +22,8 @@ interface AuthContextValue {
   user: AuthUser | null | undefined;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<AuthUser>;
-  register: (name: string, email: string, password: string, role: UserRole) => Promise<AuthUser>;
+  /** Public sign-up always creates a student account. */
+  register: (name: string, email: string, password: string) => Promise<AuthUser>;
   logout: () => Promise<void>;
 }
 
@@ -44,7 +45,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   });
 
   const registerMutation = useMutation({
-    mutationFn: (input: { name: string; email: string; password: string; role: UserRole }) =>
+    mutationFn: (input: { name: string; email: string; password: string }) =>
       api.post<{ user: AuthUser }>('/auth/register', input),
   });
 
@@ -67,8 +68,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    * written to the ['me'] cache — the caller sends the user to the sign-in page.
    */
   const register = useCallback(
-    async (name: string, email: string, password: string, role: UserRole) => {
-      const { user } = await registerMutation.mutateAsync({ name, email, password, role });
+    async (name: string, email: string, password: string) => {
+      const { user } = await registerMutation.mutateAsync({ name, email, password });
       return user;
     },
     [registerMutation],

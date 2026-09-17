@@ -6,8 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Mail, Lock, User, GraduationCap, ArrowRight, ChevronDown } from 'lucide-react';
-import { UserRole } from '@dojo-hub/shared';
+import { Mail, Lock, User, ArrowRight } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { ApiError } from '@/lib/api-client';
 import { Button } from '@/components/ui/Button';
@@ -18,7 +17,6 @@ const schema = z.object({
   name: z.string().min(2, 'Enter your full name'),
   email: z.string().email('Enter a valid email address'),
   password: z.string().min(8, 'Password must be at least 8 characters'),
-  role: z.enum([UserRole.STUDENT, UserRole.EVALUATOR]),
 });
 type FormValues = z.infer<typeof schema>;
 
@@ -40,12 +38,12 @@ function RegisterForm() {
     register,
     handleSubmit,
     formState: { errors, isSubmitting },
-  } = useForm<FormValues>({ resolver: zodResolver(schema), defaultValues: { role: UserRole.STUDENT } });
+  } = useForm<FormValues>({ resolver: zodResolver(schema) });
 
   const onSubmit = async (values: FormValues) => {
     setError(null);
     try {
-      await registerUser(values.name, values.email, values.password, values.role);
+      await registerUser(values.name, values.email, values.password);
       // Account created but not signed in — send them to sign in explicitly.
       // Preserve where they were going, so signing in after verification returns them
       // to the course they were trying to enrol in rather than a bare dashboard.
@@ -100,23 +98,6 @@ function RegisterForm() {
         </div>
 
         <div className="space-y-1.5">
-          <label className="text-xs font-mono uppercase tracking-wider font-bold text-navy-500 block">Workspace Role</label>
-          <div className="relative">
-            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-navy-400 pointer-events-none z-10">
-              <GraduationCap className="w-[18px] h-[18px]" />
-            </span>
-            <select {...register('role')} className="input input-icon input-icon-right bg-navy-50 font-medium appearance-none cursor-pointer">
-              <option value={UserRole.STUDENT}>🎓 Student Candidate</option>
-              <option value={UserRole.EVALUATOR}>🛡️ Supervisor / Evaluator</option>
-            </select>
-            <span className="absolute right-4 top-1/2 -translate-y-1/2 text-navy-400 pointer-events-none">
-              <ChevronDown className="w-4 h-4" />
-            </span>
-          </div>
-          <p className="text-xs text-navy-400">Platform administrator accounts are provisioned separately and cannot self-register.</p>
-        </div>
-
-        <div className="space-y-1.5">
           <label className="text-xs font-mono uppercase tracking-wider font-bold text-navy-500 block">Password</label>
           <div className="relative">
             <span className="absolute left-4 top-1/2 -translate-y-1/2 z-10 text-navy-400 pointer-events-none">
@@ -131,6 +112,9 @@ function RegisterForm() {
           <span>Create Account</span>
           <ArrowRight className="w-[18px] h-[18px]" />
         </Button>
+        <p className="text-xs text-navy-400 text-center">
+          This creates a student account. Evaluators don&apos;t sign up here — an administrator sends them an invitation.
+        </p>
       </form>
 
       <div className="text-center pt-3 border-t border-black/[0.06]">
