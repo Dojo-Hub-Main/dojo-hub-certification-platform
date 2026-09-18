@@ -50,7 +50,8 @@ export class UsersService implements OnModuleInit {
       const fixed = await this.prisma.$executeRaw`
         UPDATE "User" SET "roles" = ARRAY["role"]
         WHERE "roles" IS NULL OR cardinality("roles") = 0`;
-      if (fixed > 0) this.logger.log(`Filled in roles for ${fixed} account(s).`);
+      if (fixed > 0)
+        this.logger.log(`Filled in roles for ${fixed} account(s).`);
     } catch (error) {
       this.logger.error('Could not backfill account roles', error as Error);
     }
@@ -79,7 +80,9 @@ export class UsersService implements OnModuleInit {
 
     // Pending submissions sit in one shared queue any evaluator (or admin) can act on —
     // there's no per-evaluator assignment, so this count is the same for every supervisor.
-    const pendingPlatformWide = users.some((u) => rolesOf(u).includes(UserRole.EVALUATOR))
+    const pendingPlatformWide = users.some((u) =>
+      rolesOf(u).includes(UserRole.EVALUATOR),
+    )
       ? await this.prisma.submission.count({ where: { status: 'PENDING' } })
       : 0;
 
@@ -220,7 +223,9 @@ export class UsersService implements OnModuleInit {
     }
 
     if (target.role === role) {
-      throw new BadRequestException(`This account is already a ${ROLE_LABEL[role]}.`);
+      throw new BadRequestException(
+        `This account is already a ${ROLE_LABEL[role]}.`,
+      );
     }
 
     if (rolesOf(target).includes(UserRole.ADMIN)) {
@@ -234,7 +239,10 @@ export class UsersService implements OnModuleInit {
       }
     }
 
-    await this.prisma.user.update({ where: { id: targetId }, data: { role, roles: [role] } });
+    await this.prisma.user.update({
+      where: { id: targetId },
+      data: { role, roles: [role] },
+    });
 
     // The old role is baked into the access token, so anything still holding one would
     // keep the previous permissions until it expired. Dropping the refresh tokens forces
@@ -266,7 +274,8 @@ export class UsersService implements OnModuleInit {
             { label: 'Previous role', value: ROLE_LABEL[target.role] },
             { label: 'New role', value: ROLE_LABEL[role] },
           ],
-          outro: 'If you were not expecting this, contact your platform administrator.',
+          outro:
+            'If you were not expecting this, contact your platform administrator.',
         },
       },
     });
@@ -289,11 +298,15 @@ export class UsersService implements OnModuleInit {
     }
     const target = await this.findOrThrow(targetId);
     if (target.status === AccountStatus.SUSPENDED) {
-      throw new BadRequestException('Reactivate this account before changing its access.');
+      throw new BadRequestException(
+        'Reactivate this account before changing its access.',
+      );
     }
     const roles = rolesOf(target);
     if (roles.includes(role)) {
-      throw new BadRequestException(`This account already has ${ROLE_LABEL[role]} access.`);
+      throw new BadRequestException(
+        `This account already has ${ROLE_LABEL[role]} access.`,
+      );
     }
 
     const next = sortRoles([...roles, role]);
@@ -305,9 +318,13 @@ export class UsersService implements OnModuleInit {
       // A student needs a learning profile to enrol; accounts that started as something
       // else never had one.
       if (role === UserRole.STUDENT) {
-        const profile = await tx.studentProfile.findUnique({ where: { userId: targetId } });
+        const profile = await tx.studentProfile.findUnique({
+          where: { userId: targetId },
+        });
         if (!profile) {
-          const beginner = await tx.level.findFirstOrThrow({ orderBy: { order: 'asc' } });
+          const beginner = await tx.level.findFirstOrThrow({
+            orderBy: { order: 'asc' },
+          });
           await tx.studentProfile.create({
             data: { userId: targetId, currentLevelId: beginner.id },
           });
@@ -333,8 +350,14 @@ export class UsersService implements OnModuleInit {
         block: {
           heading: `You now have ${ROLE_LABEL[role]} access`,
           intro: `A platform administrator added ${ROLE_LABEL[role]} access to your account. Everything you already had access to stays as it was.`,
-          facts: [{ label: 'Your access', value: next.map((r) => ROLE_LABEL[r]).join(', ') }],
-          outro: 'Sign in as usual and choose the workspace you want. If you were not expecting this, contact your platform administrator.',
+          facts: [
+            {
+              label: 'Your access',
+              value: next.map((r) => ROLE_LABEL[r]).join(', '),
+            },
+          ],
+          outro:
+            'Sign in as usual and choose the workspace you want. If you were not expecting this, contact your platform administrator.',
         },
       },
     });
@@ -350,7 +373,9 @@ export class UsersService implements OnModuleInit {
     const target = await this.findOrThrow(targetId);
     const roles = rolesOf(target);
     if (!roles.includes(role)) {
-      throw new BadRequestException(`This account does not have ${ROLE_LABEL[role]} access.`);
+      throw new BadRequestException(
+        `This account does not have ${ROLE_LABEL[role]} access.`,
+      );
     }
     if (roles.length === 1) {
       throw new BadRequestException(
@@ -382,7 +407,11 @@ export class UsersService implements OnModuleInit {
       // Course assignments describe evaluator work, so they go with the role. Giving the
       // role back later starts from a clean list rather than a stale one.
       ...(role === UserRole.EVALUATOR
-        ? [this.prisma.evaluatorAssignment.deleteMany({ where: { evaluatorId: targetId } })]
+        ? [
+            this.prisma.evaluatorAssignment.deleteMany({
+              where: { evaluatorId: targetId },
+            }),
+          ]
         : []),
     ]);
 
@@ -404,8 +433,14 @@ export class UsersService implements OnModuleInit {
         block: {
           heading: `Your ${ROLE_LABEL[role]} access was removed`,
           intro: `A platform administrator removed ${ROLE_LABEL[role]} access from your account.`,
-          facts: [{ label: 'Your access now', value: next.map((r) => ROLE_LABEL[r]).join(', ') }],
-          outro: 'If you were not expecting this, contact your platform administrator.',
+          facts: [
+            {
+              label: 'Your access now',
+              value: next.map((r) => ROLE_LABEL[r]).join(', '),
+            },
+          ],
+          outro:
+            'If you were not expecting this, contact your platform administrator.',
         },
       },
     });
@@ -439,7 +474,9 @@ export class UsersService implements OnModuleInit {
 
     const taken = await this.prisma.user.findUnique({ where: { email } });
     if (taken) {
-      throw new ConflictException('Another account already uses that email address.');
+      throw new ConflictException(
+        'Another account already uses that email address.',
+      );
     }
 
     const verificationToken = randomUUID();
@@ -479,7 +516,8 @@ export class UsersService implements OnModuleInit {
           `account to this one. Confirm it to activate the account — you will not be able to sign in until you do.`,
         ctaLabel: 'Confirm my email address',
         ctaUrl: `${web}/verify-email?token=${verificationToken}`,
-        outro: 'If you were not expecting this, contact your platform administrator.',
+        outro:
+          'If you were not expecting this, contact your platform administrator.',
       },
     });
 
@@ -576,14 +614,21 @@ export class UsersService implements OnModuleInit {
    * Every existing session is revoked: a password change must invalidate anyone
    * already holding a refresh token for that account.
    */
-  async adminResetPassword(actor: RequestUser, userId: string, newPassword: string) {
+  async adminResetPassword(
+    actor: RequestUser,
+    userId: string,
+    newPassword: string,
+  ) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found.');
 
     const passwordHash = await bcrypt.hash(newPassword, 12);
 
     await this.prisma.$transaction([
-      this.prisma.user.update({ where: { id: userId }, data: { passwordHash } }),
+      this.prisma.user.update({
+        where: { id: userId },
+        data: { passwordHash },
+      }),
       this.prisma.refreshToken.updateMany({
         where: { userId, revoked: false },
         data: { revoked: true },

@@ -35,6 +35,14 @@ export class EvaluatorsController {
     return this.evaluatorsService.listEvaluators();
   }
 
+  /** The courses the signed-in evaluator reviews. */
+  @ApiBearerAuth()
+  @Roles(UserRole.EVALUATOR)
+  @Get('my-courses')
+  myCourses(@CurrentUser() actor: RequestUser) {
+    return this.evaluatorsService.myCourses(actor);
+  }
+
   @ApiBearerAuth()
   @Roles(UserRole.ADMIN)
   @Get('invitations')

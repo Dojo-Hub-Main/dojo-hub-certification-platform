@@ -30,7 +30,10 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     });
   }
 
-  async validate(payload: { sub: string; role?: UserRole }): Promise<RequestUser> {
+  async validate(payload: {
+    sub: string;
+    role?: UserRole;
+  }): Promise<RequestUser> {
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
     });
@@ -46,9 +49,17 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     const roles = rolesOf(user);
     const workspace = payload.role ?? primaryRole(roles);
     if (!roles.includes(workspace)) {
-      throw new UnauthorizedException('Your access has changed. Please sign in again.');
+      throw new UnauthorizedException(
+        'Your access has changed. Please sign in again.',
+      );
     }
 
-    return { id: user.id, email: user.email, name: user.name, role: workspace, roles };
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: workspace,
+      roles,
+    };
   }
 }

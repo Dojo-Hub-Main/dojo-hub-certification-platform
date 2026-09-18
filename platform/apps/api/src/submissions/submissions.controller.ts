@@ -43,23 +43,23 @@ export class SubmissionsController {
 
   @Roles(UserRole.EVALUATOR, UserRole.ADMIN)
   @Get('queue')
-  queue(@Query('status') status?: SubmissionStatus) {
-    return this.submissionsService.queue(status);
+  queue(
+    @CurrentUser() actor: RequestUser,
+    @Query('status') status?: SubmissionStatus,
+  ) {
+    return this.submissionsService.queue(actor, status);
   }
 
   @Roles(UserRole.EVALUATOR, UserRole.ADMIN)
   @Get('queue/stats')
-  queueStats() {
-    return this.submissionsService.queueStats();
+  queueStats(@CurrentUser() actor: RequestUser) {
+    return this.submissionsService.queueStats(actor);
   }
 
   @Get(':id')
   async getById(@CurrentUser() actor: RequestUser, @Param('id') id: string) {
-    const submission = await this.submissionsService.getById(id);
-    if (actor.role === UserRole.STUDENT && submission.studentId !== actor.id) {
-      throw new ForbiddenException();
-    }
-    return submission;
+    // Who may read this is decided in the service, alongside the same rule for grading.
+    return this.submissionsService.getById(actor, id);
   }
 
   @Roles(UserRole.EVALUATOR, UserRole.ADMIN)

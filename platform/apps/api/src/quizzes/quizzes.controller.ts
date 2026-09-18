@@ -162,8 +162,8 @@ export class QuizzesController {
 
   @Roles(UserRole.EVALUATOR)
   @Get('attempts/pending')
-  pendingManualGrading() {
-    return this.quizzesService.pendingManualGrading();
+  pendingManualGrading(@CurrentUser() actor: RequestUser) {
+    return this.quizzesService.pendingManualGrading(actor);
   }
 
   @Roles(UserRole.EVALUATOR)

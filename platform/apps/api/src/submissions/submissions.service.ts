@@ -24,6 +24,13 @@ import { GradeSubmissionDto } from './dto/grade-submission.dto';
 
 const WEB = process.env.WEB_URL ?? 'https://dojo-hub-web.onrender.com';
 
+/**
+ * Evaluators review only the courses they are assigned. The switch exists so the rule can
+ * be turned off from the hosting settings — without a new release — if it ever hides work
+ * an evaluator needs; administrators are never restricted either way.
+ */
+const COURSE_SCOPE_ON = process.env.EVALUATOR_COURSE_SCOPE !== 'off';
+
 const FULL_INCLUDE = {
   files: true,
   rubricChecks: true,
@@ -154,26 +161,46 @@ export class SubmissionsService {
   }
 
   /**
-   * Submissions land in one shared queue rather than being assigned, so every
-   * active evaluator (and admin, who can also grade) is told when work arrives.
+   * Tells the people who will actually review this work: the evaluators assigned to its
+   * course. A course with no evaluator falls to the administrators, so nothing sits unseen.
+   * Nobody is ever told to review their own submission.
    */
   private async notifyReviewers(
     actor: RequestUser,
     submissionTitle: string,
     submissionId: string,
   ) {
+    const trackId = await this.trackOfSubmission(submissionId);
+    const assigned = trackId
+      ? await this.prisma.evaluatorAssignment.findMany({
+          where: { trackId },
+          select: { evaluatorId: true },
+        })
+      : [];
+
+    const audience =
+      COURSE_SCOPE_ON && assigned.length > 0
+        ? {
+            id: { in: assigned.map((a) => a.evaluatorId), not: actor.id },
+            roles: { has: UserRole.EVALUATOR },
+          }
+        : {
+            // No evaluator on this course (or the rule is off): administrators handle it.
+            roles: {
+              hasSome: COURSE_SCOPE_ON
+                ? [UserRole.ADMIN]
+                : [UserRole.EVALUATOR, UserRole.ADMIN],
+            },
+            id: { not: actor.id },
+          };
+
     const [student, reviewers] = await Promise.all([
       this.prisma.user.findUnique({
         where: { id: actor.id },
         select: { name: true },
       }),
       this.prisma.user.findMany({
-        where: {
-          roles: { hasSome: [UserRole.EVALUATOR, UserRole.ADMIN] },
-          // Nobody is told to review their own work.
-          id: { not: actor.id },
-          status: AccountStatus.ACTIVE,
-        },
+        where: { ...audience, status: AccountStatus.ACTIVE },
         select: { id: true },
       }),
     ]);
@@ -199,7 +226,8 @@ export class SubmissionsService {
               ],
               ctaLabel: 'Open the grading queue',
               ctaUrl: `${WEB}/queue`,
-              outro: 'Work through the competency rubric before approving — every item must be checked.',
+              outro:
+                'Work through the competency rubric before approving — every item must be checked.',
             },
           },
         }),
@@ -228,9 +256,10 @@ export class SubmissionsService {
     });
   }
 
-  async queue(status?: SubmissionStatus) {
+  async queue(actor: RequestUser, status?: SubmissionStatus) {
+    const scope = await this.courseScopeFor(actor);
     const submissions = await this.prisma.submission.findMany({
-      where: status ? { status } : {},
+      where: { ...(status ? { status } : {}), ...scope },
       include: FULL_INCLUDE,
       // Newest first — supervisors work the most recent arrivals at the top.
       orderBy: { submittedAt: 'desc' },
@@ -246,21 +275,24 @@ export class SubmissionsService {
     );
   }
 
-  /** Headline counts for the supervisor dashboard, so reviewers see workload at a glance. */
-  async queueStats() {
+  /** Headline counts for the supervisor dashboard — of their own courses, not the platform. */
+  async queueStats(actor: RequestUser) {
+    const scope = await this.courseScopeFor(actor);
     const [byStatus, oldestPending, gradedToday] = await Promise.all([
       this.prisma.submission.groupBy({
         by: ['status'],
+        where: scope,
         _count: { _all: true },
       }),
       this.prisma.submission.findFirst({
-        where: { status: SubmissionStatus.PENDING },
+        where: { status: SubmissionStatus.PENDING, ...scope },
         orderBy: { submittedAt: 'asc' },
         select: { submittedAt: true },
       }),
       this.prisma.submission.count({
         where: {
           evaluatedAt: { gte: new Date(new Date().setHours(0, 0, 0, 0)) },
+          ...scope,
         },
       }),
     ]);
@@ -278,6 +310,66 @@ export class SubmissionsService {
     };
   }
 
+  /**
+   * The course a submission belongs to — through its lesson or its module. Older capstone
+   * submissions belong to a level rather than a course and have none; those stay with
+   * administrators.
+   */
+  private async trackOfSubmission(
+    submissionId: string,
+  ): Promise<string | null> {
+    const submission = await this.prisma.submission.findUnique({
+      where: { id: submissionId },
+      select: {
+        module: { select: { trackId: true } },
+        topic: { select: { module: { select: { trackId: true } } } },
+      },
+    });
+    return (
+      submission?.topic?.module.trackId ?? submission?.module?.trackId ?? null
+    );
+  }
+
+  /** The courses this evaluator is assigned. Empty means they review nothing. */
+  private async assignedTrackIds(evaluatorId: string): Promise<string[]> {
+    const rows = await this.prisma.evaluatorAssignment.findMany({
+      where: { evaluatorId },
+      select: { trackId: true },
+    });
+    return rows.map((r) => r.trackId);
+  }
+
+  /**
+   * A `where` fragment limiting submissions to the courses this person may review.
+   * Administrators get everything; an evaluator gets their assigned courses only.
+   */
+  private async courseScopeFor(actor: RequestUser) {
+    if (!COURSE_SCOPE_ON || actor.role !== UserRole.EVALUATOR) return {};
+    const trackIds = await this.assignedTrackIds(actor.id);
+    if (trackIds.length === 0) {
+      // Assigned to nothing: match nothing, rather than everything.
+      return { id: '__no-course-assigned__' };
+    }
+    return {
+      OR: [
+        { topic: { module: { trackId: { in: trackIds } } } },
+        { module: { trackId: { in: trackIds } } },
+      ],
+    };
+  }
+
+  /** Refuses an evaluator working on a course that is not theirs. */
+  private async assertMayReview(actor: RequestUser, submissionId: string) {
+    if (!COURSE_SCOPE_ON || actor.role !== UserRole.EVALUATOR) return;
+    const trackId = await this.trackOfSubmission(submissionId);
+    const trackIds = await this.assignedTrackIds(actor.id);
+    if (!trackId || !trackIds.includes(trackId)) {
+      throw new ForbiddenException(
+        'This submission belongs to a course you are not assigned to.',
+      );
+    }
+  }
+
   async mine(studentId: string) {
     const submissions = await this.prisma.submission.findMany({
       where: { studentId },
@@ -287,12 +379,20 @@ export class SubmissionsService {
     return submissions.map((s) => this.sanitizeSubmission(s));
   }
 
-  async getById(id: string) {
+  async getById(actor: RequestUser, id: string) {
     const submission = await this.prisma.submission.findUnique({
       where: { id },
       include: FULL_INCLUDE,
     });
     if (!submission) throw new NotFoundException('Submission not found.');
+    // A student reads their own; an evaluator reads their courses'; an admin reads any.
+    if (actor.role === UserRole.STUDENT) {
+      if (submission.studentId !== actor.id) {
+        throw new ForbiddenException('That submission is not yours.');
+      }
+    } else {
+      await this.assertMayReview(actor, id);
+    }
     return this.sanitizeSubmission(submission);
   }
 
@@ -336,6 +436,7 @@ export class SubmissionsService {
     checkId: string,
     checked: boolean,
   ) {
+    await this.assertMayReview(actor, submissionId);
     const check = await this.prisma.submissionRubricCheck.findUnique({
       where: { id: checkId },
     });
@@ -359,6 +460,10 @@ export class SubmissionsService {
       include: { rubricChecks: true },
     });
     if (!submission) throw new NotFoundException('Submission not found.');
+    if (submission.studentId === actor.id) {
+      throw new ForbiddenException('You cannot review your own submission.');
+    }
+    await this.assertMayReview(actor, submissionId);
     if (submission.status !== SubmissionStatus.PENDING) {
       throw new BadRequestException(
         'This submission has already been evaluated.',
@@ -436,7 +541,9 @@ export class SubmissionsService {
           ? `Approved: ${submission.title}`
           : `Revisions requested: ${submission.title}`,
         block: {
-          heading: approved ? 'Your work was approved' : 'Your work needs revisions',
+          heading: approved
+            ? 'Your work was approved'
+            : 'Your work needs revisions',
           intro: approved
             ? 'A supervisor has reviewed your submission and passed it.'
             : 'A supervisor has reviewed your submission and asked for changes before it can pass.',
@@ -454,7 +561,8 @@ export class SubmissionsService {
     });
 
     return {
-      submission: await this.getById(submissionId),
+      // The grader has just been checked against this submission's course above.
+      submission: await this.getById(actor, submissionId),
       credential,
       levelUp,
     };

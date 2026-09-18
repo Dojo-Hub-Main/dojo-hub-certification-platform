@@ -121,9 +121,16 @@ export class AuthController {
     await this.authService.logout(getCookie(req, 'refresh_token'));
     // Attributes must mirror how the cookies were set, or the browser may keep them.
     const isProd = this.configService.get<string>('nodeEnv') === 'production';
-    const crossSite = { sameSite: isProd ? ('none' as const) : ('lax' as const), secure: isProd };
+    const crossSite = {
+      sameSite: isProd ? ('none' as const) : ('lax' as const),
+      secure: isProd,
+    };
     res.clearCookie('access_token', { httpOnly: true, ...crossSite });
-    res.clearCookie('refresh_token', { httpOnly: true, ...crossSite, path: '/api/auth' });
+    res.clearCookie('refresh_token', {
+      httpOnly: true,
+      ...crossSite,
+      path: '/api/auth',
+    });
     return { success: true };
   }
 
@@ -189,7 +196,10 @@ export class AuthController {
     // then silently send no credentials on any subsequent request. 'none' + Secure is
     // the only combination browsers allow cross-site. Locally both apps share
     // `localhost`, so 'lax' stays correct there and needs no HTTPS.
-    const crossSite = { sameSite: isProd ? ('none' as const) : ('lax' as const), secure: isProd };
+    const crossSite = {
+      sameSite: isProd ? ('none' as const) : ('lax' as const),
+      secure: isProd,
+    };
     res.cookie('access_token', accessToken, {
       httpOnly: true,
       ...crossSite,

@@ -19,8 +19,13 @@ export const ROLE_PRIORITY: readonly UserRole[] = [
  * roles backfill has not reached — for example one written by the previous version during
  * a deploy — so no account is ever read as having no role at all.
  */
-export function rolesOf(user: { role: UserRole; roles?: UserRole[] | null }): UserRole[] {
-  return user.roles && user.roles.length > 0 ? sortRoles(user.roles) : [user.role];
+export function rolesOf(user: {
+  role: UserRole;
+  roles?: UserRole[] | null;
+}): UserRole[] {
+  return user.roles && user.roles.length > 0
+    ? sortRoles(user.roles)
+    : [user.role];
 }
 
 export function sortRoles(roles: readonly UserRole[]): UserRole[] {

@@ -52,6 +52,9 @@ const REVIEW_TOPIC_SELECT = {
   },
 } as const;
 
+/** Mirrors the submissions rule: evaluators work only on their assigned courses. */
+const COURSE_SCOPE_ON = process.env.EVALUATOR_COURSE_SCOPE !== 'off';
+
 @Injectable()
 export class QuizzesService {
   constructor(
@@ -747,6 +750,10 @@ export class QuizzesService {
         'This attempt is not awaiting manual grading.',
       );
     }
+    if (attempt.userId === actor.id) {
+      throw new ForbiddenException('You cannot mark your own answer.');
+    }
+    await this.assertMayGrade(actor, attempt);
 
     await this.prisma.quizAttempt.update({
       where: { id: attemptId },
@@ -797,8 +804,9 @@ export class QuizzesService {
     );
   }
 
-  async pendingManualGrading() {
-    return this.prisma.quizAttempt.findMany({
+  /** Written answers waiting to be marked, limited to the courses this person reviews. */
+  async pendingManualGrading(actor: RequestUser) {
+    const attempts = await this.prisma.quizAttempt.findMany({
       where: { subjectiveStatus: SubjectiveStatus.PENDING_EVALUATOR },
       orderBy: { createdAt: 'asc' },
       include: {
@@ -806,6 +814,50 @@ export class QuizzesService {
         trackAssessment: { include: { track: true } },
       },
     });
+    if (!COURSE_SCOPE_ON || actor.role !== UserRole.EVALUATOR) return attempts;
+
+    const mine = await this.assignedTrackIds(actor.id);
+    return attempts.filter((a) => {
+      const trackId =
+        a.moduleQuiz?.module.trackId ?? a.trackAssessment?.trackId ?? null;
+      return !!trackId && mine.includes(trackId);
+    });
+  }
+
+  /** The courses this evaluator is assigned; empty means they review nothing. */
+  private async assignedTrackIds(evaluatorId: string) {
+    const rows = await this.prisma.evaluatorAssignment.findMany({
+      where: { evaluatorId },
+      select: { trackId: true },
+    });
+    return rows.map((r) => r.trackId);
+  }
+
+  /** Refuses an evaluator marking work from a course that is not theirs. */
+  private async assertMayGrade(
+    actor: RequestUser,
+    attempt: { moduleQuizId: string | null; trackAssessmentId: string | null },
+  ) {
+    if (!COURSE_SCOPE_ON || actor.role !== UserRole.EVALUATOR) return;
+    const quiz = attempt.moduleQuizId
+      ? await this.prisma.moduleQuiz.findUnique({
+          where: { id: attempt.moduleQuizId },
+          include: { module: { select: { trackId: true } } },
+        })
+      : null;
+    const assessment = attempt.trackAssessmentId
+      ? await this.prisma.trackAssessment.findUnique({
+          where: { id: attempt.trackAssessmentId },
+          select: { trackId: true },
+        })
+      : null;
+    const trackId = quiz?.module.trackId ?? assessment?.trackId ?? null;
+    const mine = await this.assignedTrackIds(actor.id);
+    if (!trackId || !mine.includes(trackId)) {
+      throw new ForbiddenException(
+        'That answer belongs to a course you are not assigned to.',
+      );
+    }
   }
 
   private async finalize(

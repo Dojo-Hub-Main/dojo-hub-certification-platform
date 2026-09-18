@@ -1,6 +1,13 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { UserRole } from '@dojo-hub/shared';
-import { IsEmail, IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import {
+  IsEmail,
+  IsIn,
+  IsOptional,
+  IsString,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 
 export class RegisterDto {
   @ApiProperty()
@@ -30,7 +37,8 @@ export class RegisterDto {
   @ApiProperty({ enum: [UserRole.STUDENT], required: false })
   @IsOptional()
   @IsIn([UserRole.STUDENT], {
-    message: 'Signing up creates a student account. Evaluators are invited by an administrator.',
+    message:
+      'Signing up creates a student account. Evaluators are invited by an administrator.',
   })
   role?: typeof UserRole.STUDENT;
 }

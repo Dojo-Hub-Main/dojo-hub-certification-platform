@@ -33,8 +33,14 @@ export class AuthService {
   ) {}
 
   /** Sends (or re-sends) the confirmation link for an unverified account. */
-  private async sendVerificationEmail(email: string, name: string, token: string) {
-    const web = this.configService.get<string>('webUrl') ?? 'https://dojo-hub-web.onrender.com';
+  private async sendVerificationEmail(
+    email: string,
+    name: string,
+    token: string,
+  ) {
+    const web =
+      this.configService.get<string>('webUrl') ??
+      'https://dojo-hub-web.onrender.com';
     await this.emailService.send({
       to: email,
       subject: 'Confirm your email for Dojo Hub Learning Platform',
@@ -44,16 +50,21 @@ export class AuthService {
           'Confirm your email address to activate your account. You will not be able to sign in until you do.',
         ctaLabel: 'Confirm my email address',
         ctaUrl: `${web}/verify-email?token=${token}`,
-        outro: 'If you did not create a Dojo Hub Learning Platform account, you can ignore this email.',
+        outro:
+          'If you did not create a Dojo Hub Learning Platform account, you can ignore this email.',
       },
     });
   }
 
   /** Redeems a verification token. Single-use: the token is cleared on success. */
   async verifyEmail(token: string) {
-    const user = await this.prisma.user.findUnique({ where: { verificationToken: token } });
+    const user = await this.prisma.user.findUnique({
+      where: { verificationToken: token },
+    });
     if (!user) {
-      throw new BadRequestException('This confirmation link is invalid or has already been used.');
+      throw new BadRequestException(
+        'This confirmation link is invalid or has already been used.',
+      );
     }
 
     await this.prisma.user.update({
@@ -69,14 +80,20 @@ export class AuthService {
    * which addresses have accounts.
    */
   async resendVerification(email: string) {
-    const user = await this.prisma.user.findUnique({ where: { email: email.toLowerCase() } });
+    const user = await this.prisma.user.findUnique({
+      where: { email: email.toLowerCase() },
+    });
     if (user && !user.emailVerifiedAt) {
       const verificationToken = randomUUID();
       await this.prisma.user.update({
         where: { id: user.id },
         data: { verificationToken, verificationSentAt: new Date() },
       });
-      await this.sendVerificationEmail(user.email, user.name, verificationToken);
+      await this.sendVerificationEmail(
+        user.email,
+        user.name,
+        verificationToken,
+      );
     }
     return { success: true };
   }
@@ -107,7 +124,8 @@ export class AuthService {
       });
 
       const web =
-        this.configService.get<string>('webUrl') ?? 'https://dojo-hub-web.onrender.com';
+        this.configService.get<string>('webUrl') ??
+        'https://dojo-hub-web.onrender.com';
       await this.emailService.send({
         to: user.email,
         subject: 'Reset your Dojo Hub Learning Platform password',
@@ -142,7 +160,8 @@ export class AuthService {
 
     const expired =
       !user?.passwordResetSentAt ||
-      Date.now() - user.passwordResetSentAt.getTime() > AuthService.RESET_TOKEN_TTL_MS;
+      Date.now() - user.passwordResetSentAt.getTime() >
+        AuthService.RESET_TOKEN_TTL_MS;
 
     if (!user || expired) {
       throw new BadRequestException(
@@ -294,7 +313,9 @@ export class AuthService {
 
     // Stay in the same workspace — unless that role has since been removed, in which case
     // the session falls back to the account's default workspace.
-    return this.issueSession(this.toRequestUser(user, stored.activeRole ?? undefined));
+    return this.issueSession(
+      this.toRequestUser(user, stored.activeRole ?? undefined),
+    );
   }
 
   /**
@@ -308,9 +329,13 @@ export class AuthService {
     role: UserRole,
     rawRefreshToken: string | undefined,
   ) {
-    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: actor.id } });
+    const user = await this.prisma.user.findUniqueOrThrow({
+      where: { id: actor.id },
+    });
     if (!rolesOf(user).includes(role)) {
-      throw new ForbiddenException('Your account does not have access to that workspace.');
+      throw new ForbiddenException(
+        'Your account does not have access to that workspace.',
+      );
     }
 
     if (rawRefreshToken) {
@@ -352,7 +377,11 @@ export class AuthService {
       where: { id: userId },
       include: { studentProfile: { include: { currentLevel: true } } },
     });
-    return { ...this.omitPasswordHash(user), role: workspace, roles: rolesOf(user) };
+    return {
+      ...this.omitPasswordHash(user),
+      role: workspace,
+      roles: rolesOf(user),
+    };
   }
 
   async updateProfile(userId: string, dto: UpdateProfileDto) {
@@ -450,11 +479,18 @@ export class AuthService {
    * holds that role; otherwise the session opens the account's default workspace.
    */
   private toRequestUser(
-    user: { id: string; email: string; name: string; role: UserRole; roles?: UserRole[] | null },
+    user: {
+      id: string;
+      email: string;
+      name: string;
+      role: UserRole;
+      roles?: UserRole[] | null;
+    },
     workspace?: UserRole,
   ): RequestUser {
     const roles = rolesOf(user);
-    const role = workspace && roles.includes(workspace) ? workspace : primaryRole(roles);
+    const role =
+      workspace && roles.includes(workspace) ? workspace : primaryRole(roles);
     return { id: user.id, email: user.email, name: user.name, role, roles };
   }
 

@@ -104,6 +104,12 @@ export default function EvaluatorQueuePage() {
     queryFn: () => api.get<QuizAttemptPending[]>('/quizzes/attempts/pending'),
   });
 
+  // Which courses this evaluator covers — the queue below shows only these.
+  const { data: myCourses = [] } = useQuery<{ id: string; title: string }[]>({
+    queryKey: ['evaluators', 'my-courses'],
+    queryFn: () => api.get<{ id: string; title: string }[]>('/evaluators/my-courses'),
+  });
+
   const { data: stats } = useQuery<QueueStats>({
     queryKey: ['submissions', 'queue', 'stats'],
     queryFn: () => api.get<QueueStats>('/submissions/queue/stats'),
@@ -118,6 +124,15 @@ export default function EvaluatorQueuePage() {
           <Badge tone="red">Operational Terminal</Badge>
           <h1 className="text-2xl font-extrabold text-white mt-2 tracking-tight">Dojo Evaluation Hub &amp; Review Pipeline</h1>
           <p className="text-sm text-navy-300">Process student coursework validations and audit evidence.</p>
+          <p className="text-xs text-navy-400 mt-2 max-w-xl">
+            {myCourses.length > 0 ? (
+              <>
+                Your courses: <span className="text-navy-200 font-semibold">{myCourses.map((c) => c.title).join(', ')}</span>
+              </>
+            ) : (
+              'You have no courses assigned yet, so nothing appears here. Ask an administrator to assign your courses.'
+            )}
+          </p>
         </div>
         <Badge tone="red" className="relative text-sm px-3.5 py-2">
           {stats?.pending ?? 0} Awaiting Review

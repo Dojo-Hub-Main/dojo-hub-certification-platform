@@ -47,7 +47,10 @@ export class EvaluatorsService {
   ) {}
 
   private get webUrl() {
-    return this.configService.get<string>('webUrl') ?? 'https://learning.dojohubug.com';
+    return (
+      this.configService.get<string>('webUrl') ??
+      'https://learning.dojohubug.com'
+    );
   }
 
   // -------------------------------------------------------------------------
@@ -66,7 +69,9 @@ export class EvaluatorsService {
       );
     }
     if (existing?.status === AccountStatus.SUSPENDED) {
-      throw new BadRequestException('That account is suspended. Reactivate it first.');
+      throw new BadRequestException(
+        'That account is suspended. Reactivate it first.',
+      );
     }
 
     // One live invitation per address: re-inviting replaces the old link rather than
@@ -101,7 +106,9 @@ export class EvaluatorsService {
 
   async resend(actor: RequestUser, invitationId: string) {
     const invitation = await this.pendingOrThrow(invitationId);
-    const tracks = await this.tracksOrThrow(invitation.trackIds, { allowMissing: true });
+    const tracks = await this.tracksOrThrow(invitation.trackIds, {
+      allowMissing: true,
+    });
 
     const refreshed = await this.prisma.evaluatorInvitation.update({
       where: { id: invitationId },
@@ -121,7 +128,9 @@ export class EvaluatorsService {
 
   async cancel(actor: RequestUser, invitationId: string) {
     const invitation = await this.pendingOrThrow(invitationId);
-    await this.prisma.evaluatorInvitation.delete({ where: { id: invitationId } });
+    await this.prisma.evaluatorInvitation.delete({
+      where: { id: invitationId },
+    });
     await this.auditService.log({
       actor,
       action: `Cancelled the evaluator invitation to ${invitation.email}`,
@@ -169,12 +178,19 @@ export class EvaluatorsService {
         'This invitation has expired. Ask an administrator to send a new one.',
       );
     }
-    const tracks = await this.tracksOrThrow(invitation.trackIds, { allowMissing: true });
+    const tracks = await this.tracksOrThrow(invitation.trackIds, {
+      allowMissing: true,
+    });
     // Someone may have signed up with this address after the invitation was sent.
     const account =
       (invitation.userId
-        ? await this.prisma.user.findUnique({ where: { id: invitation.userId } })
-        : null) ?? (await this.prisma.user.findUnique({ where: { email: invitation.email } }));
+        ? await this.prisma.user.findUnique({
+            where: { id: invitation.userId },
+          })
+        : null) ??
+      (await this.prisma.user.findUnique({
+        where: { email: invitation.email },
+      }));
 
     return {
       name: invitation.name,
@@ -203,11 +219,18 @@ export class EvaluatorsService {
 
     const existing =
       (invitation.userId
-        ? await this.prisma.user.findUnique({ where: { id: invitation.userId } })
-        : null) ?? (await this.prisma.user.findUnique({ where: { email: invitation.email } }));
+        ? await this.prisma.user.findUnique({
+            where: { id: invitation.userId },
+          })
+        : null) ??
+      (await this.prisma.user.findUnique({
+        where: { email: invitation.email },
+      }));
 
     if (!existing && (!dto.password || dto.password.length < 8)) {
-      throw new BadRequestException('Choose a password of at least 8 characters.');
+      throw new BadRequestException(
+        'Choose a password of at least 8 characters.',
+      );
     }
     if (existing?.status === AccountStatus.SUSPENDED) {
       throw new BadRequestException(
@@ -245,7 +268,7 @@ export class EvaluatorsService {
       });
       await tx.evaluatorAssignment.createMany({
         data: tracks.map((t) => ({
-          evaluatorId: account!.id,
+          evaluatorId: account.id,
           trackId: t.id,
           assignedById: invitation.invitedById,
         })),
@@ -290,7 +313,9 @@ export class EvaluatorsService {
         orderBy: { createdAt: 'desc' },
         include: {
           evaluatorCourses: {
-            include: { track: { select: { id: true, title: true, status: true } } },
+            include: {
+              track: { select: { id: true, title: true, status: true } },
+            },
           },
         },
       }),
@@ -323,9 +348,25 @@ export class EvaluatorsService {
     };
   }
 
+  /** The courses the signed-in evaluator reviews, for their own queue screen. */
+  async myCourses(actor: RequestUser) {
+    const rows = await this.prisma.evaluatorAssignment.findMany({
+      where: { evaluatorId: actor.id },
+      include: { track: { select: { id: true, title: true } } },
+      orderBy: { track: { title: 'asc' } },
+    });
+    return rows.map((r) => r.track);
+  }
+
   /** Replaces an evaluator's courses with exactly this list. */
-  async setCourses(actor: RequestUser, evaluatorId: string, dto: SetEvaluatorCoursesDto) {
-    const evaluator = await this.prisma.user.findUnique({ where: { id: evaluatorId } });
+  async setCourses(
+    actor: RequestUser,
+    evaluatorId: string,
+    dto: SetEvaluatorCoursesDto,
+  ) {
+    const evaluator = await this.prisma.user.findUnique({
+      where: { id: evaluatorId },
+    });
     if (!evaluator) throw new NotFoundException('User not found.');
     if (!rolesOf(evaluator).includes(UserRole.EVALUATOR)) {
       throw new BadRequestException(
@@ -339,7 +380,11 @@ export class EvaluatorsService {
         where: { evaluatorId, trackId: { notIn: tracks.map((t) => t.id) } },
       }),
       this.prisma.evaluatorAssignment.createMany({
-        data: tracks.map((t) => ({ evaluatorId, trackId: t.id, assignedById: actor.id })),
+        data: tracks.map((t) => ({
+          evaluatorId,
+          trackId: t.id,
+          assignedById: actor.id,
+        })),
         skipDuplicates: true,
       }),
     ]);
@@ -363,7 +408,10 @@ export class EvaluatorsService {
         : 'You are not assigned to any course at the moment.',
     });
 
-    return { success: true, courses: tracks.map((t) => ({ id: t.id, title: t.title })) };
+    return {
+      success: true,
+      courses: tracks.map((t) => ({ id: t.id, title: t.title })),
+    };
   }
 
   // -------------------------------------------------------------------------
@@ -374,7 +422,10 @@ export class EvaluatorsService {
     return new Date(Date.now() + INVITATION_DAYS * 24 * 60 * 60 * 1000);
   }
 
-  private async tracksOrThrow(trackIds: string[], options?: { allowMissing?: boolean }) {
+  private async tracksOrThrow(
+    trackIds: string[],
+    options?: { allowMissing?: boolean },
+  ) {
     const unique = [...new Set(trackIds)];
     const tracks = await this.prisma.track.findMany({
       where: { id: { in: unique } },
@@ -382,7 +433,9 @@ export class EvaluatorsService {
       orderBy: { title: 'asc' },
     });
     if (!options?.allowMissing && tracks.length !== unique.length) {
-      throw new BadRequestException('One or more of those courses no longer exists.');
+      throw new BadRequestException(
+        'One or more of those courses no longer exists.',
+      );
     }
     return tracks;
   }
@@ -393,7 +446,9 @@ export class EvaluatorsService {
     });
     if (!invitation) throw new NotFoundException('Invitation not found.');
     if (invitation.acceptedAt) {
-      throw new BadRequestException('That invitation has already been accepted.');
+      throw new BadRequestException(
+        'That invitation has already been accepted.',
+      );
     }
     return invitation;
   }
@@ -429,7 +484,8 @@ export class EvaluatorsService {
     const courses = tracks.map((t) => t.title).join(', ') || 'No course yet';
     await this.emailService.send({
       to: invitation.email,
-      subject: 'You have been invited to evaluate on Dojo Hub Learning Platform',
+      subject:
+        'You have been invited to evaluate on Dojo Hub Learning Platform',
       block: {
         heading: 'An invitation to evaluate',
         intro: hasAccount
@@ -439,7 +495,10 @@ export class EvaluatorsService {
           { label: 'Your name', value: invitation.name },
           { label: 'Email address', value: invitation.email },
           { label: 'Courses you will review', value: courses },
-          { label: 'Link valid until', value: invitation.expiresAt.toDateString() },
+          {
+            label: 'Link valid until',
+            value: invitation.expiresAt.toDateString(),
+          },
         ],
         ctaLabel: hasAccount ? 'Accept evaluator access' : 'Set my password',
         ctaUrl: `${this.webUrl}/accept-invitation?token=${invitation.token}`,
