@@ -147,6 +147,10 @@ model User {
   uploadedFiles         StoredFile[]           @relation("FileUploader")
   evaluatorSignedCreds  Credential[]           @relation("CredentialEvaluatorSignature")
   adminSignedCreds      Credential[]           @relation("CredentialAdminSignature")
+  evaluatorCourses      EvaluatorAssignment[]  @relation("EvaluatorAssignmentEvaluator")
+  assignedEvaluators    EvaluatorAssignment[]  @relation("EvaluatorAssignmentAssignedBy")
+  evaluatorInvitations  EvaluatorInvitation[]  @relation("EvaluatorInvitationUser")
+  sentInvitations       EvaluatorInvitation[]  @relation("EvaluatorInvitationSentBy")
 
   @@index([role])
 }
@@ -163,6 +167,45 @@ model RefreshToken {
   createdAt DateTime @default(now())
 
   @@index([userId])
+}
+
+/// Which courses an evaluator may review. An evaluator sees only the submissions of the
+/// courses listed here, and only administrators can change the list.
+model EvaluatorAssignment {
+  id          String   @id @default(uuid())
+  evaluatorId String
+  evaluator   User     @relation("EvaluatorAssignmentEvaluator", fields: [evaluatorId], references: [id], onDelete: Cascade)
+  trackId     String
+  track       Track    @relation(fields: [trackId], references: [id], onDelete: Cascade)
+  assignedById String?
+  assignedBy   User?   @relation("EvaluatorAssignmentAssignedBy", fields: [assignedById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+
+  @@unique([evaluatorId, trackId])
+  @@index([trackId])
+}
+
+/// An invitation to evaluate, sent by an administrator. Evaluator access is granted only
+/// when the person opens the emailed link and accepts, so nobody becomes an evaluator
+/// without knowing. `userId` is set when the address already has an account.
+model EvaluatorInvitation {
+  id         String    @id @default(uuid())
+  email      String
+  name       String
+  /// The existing account this invitation adds Evaluator to, if the address has one.
+  userId     String?
+  user       User?     @relation("EvaluatorInvitationUser", fields: [userId], references: [id], onDelete: Cascade)
+  /// Courses granted the moment the invitation is accepted.
+  trackIds   String[]  @default([])
+  /// Single-use, unguessable; cleared once redeemed.
+  token      String    @unique
+  expiresAt  DateTime
+  acceptedAt DateTime?
+  invitedById String?
+  invitedBy   User?    @relation("EvaluatorInvitationSentBy", fields: [invitedById], references: [id], onDelete: SetNull)
+  createdAt  DateTime  @default(now())
+
+  @@index([email])
 }
 
 // ---------------------------------------------------------------------------
@@ -224,6 +267,7 @@ model Track {
   assessment     TrackAssessment?
   bookmarks      Bookmark[]
   collectionItems CollectionItem[]
+  evaluators     EvaluatorAssignment[]
 
   @@index([categoryId])
   @@index([status])

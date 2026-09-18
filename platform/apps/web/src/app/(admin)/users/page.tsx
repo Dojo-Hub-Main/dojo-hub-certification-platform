@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/Badge';
 import { SlidingTabs } from '@/components/ui/SlidingTabs';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { SubmissionReviewPanel } from '@/components/evaluator/SubmissionReviewPanel';
+import { EvaluatorAccessPanel } from '@/components/admin/EvaluatorAccessPanel';
 
 interface DirectoryEntry {
   id: string;
@@ -310,6 +311,7 @@ Minimum 8 characters. Share it with them directly — it is not emailed.`,
         {!isLoading && users.length === 0 && <p className="p-6 text-sm text-navy-400 text-center">No accounts found.</p>}
       </Card>
 
+      {role === UserRole.EVALUATOR && <EvaluatorAccessPanel />}
       {role === UserRole.EVALUATOR && <PendingQueuePanel />}
     </div>
   );

@@ -374,10 +374,17 @@ export class UsersService implements OnModuleInit {
     }
 
     const next = roles.filter((r) => r !== role);
-    await this.prisma.user.update({
-      where: { id: targetId },
-      data: { roles: next, role: primaryRole(next) },
-    });
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: targetId },
+        data: { roles: next, role: primaryRole(next) },
+      }),
+      // Course assignments describe evaluator work, so they go with the role. Giving the
+      // role back later starts from a clean list rather than a stale one.
+      ...(role === UserRole.EVALUATOR
+        ? [this.prisma.evaluatorAssignment.deleteMany({ where: { evaluatorId: targetId } })]
+        : []),
+    ]);
 
     await this.auditService.log({
       actor,

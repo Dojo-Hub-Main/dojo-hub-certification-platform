@@ -12,6 +12,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { EmailModule } from './email/email.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
+import { EvaluatorsModule } from './evaluators/evaluators.module';
 import { LevelsModule } from './levels/levels.module';
 import { CategoriesModule } from './categories/categories.module';
 import { TracksModule } from './tracks/tracks.module';
@@ -49,6 +50,7 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
     NotificationsModule,
     AuthModule,
     UsersModule,
+    EvaluatorsModule,
     LevelsModule,
     CategoriesModule,
     TracksModule,
