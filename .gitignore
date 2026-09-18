@@ -10,3 +10,6 @@ coverage/
 # Local scratch + tooling
 .playwright-scratch/
 .claude/settings.local.json
+
+# Database backups taken with apps/api/scripts/backup-database.cjs — personal data
+*.backup.json
