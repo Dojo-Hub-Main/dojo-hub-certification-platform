@@ -8,11 +8,14 @@
  *   $env:BACKUP_DATABASE_URL = "postgresql://...supabase..."
  *   node scripts/backup-database.cjs
  *
- * The file lands beside the repository unless BACKUP_FILE names somewhere else. It holds
- * every account's password hash and every certificate, so keep it off shared drives and
- * out of the repository — .gitignore already excludes *.backup.json.
+ * It reads the tables directly with SELECT *, not through the app's models, so it works
+ * whatever version of the code is checked out — a backup taken before a release must not
+ * depend on the release it is protecting against. Tables and columns that do not exist yet
+ * are simply reported and skipped.
  *
- * To restore, copy it back with scripts/copy-database.cjs, or ask for a restore script.
+ * The file lands in the current directory unless BACKUP_FILE names somewhere else. It
+ * holds every account's password hash and every certificate, so keep it off shared drives
+ * and out of the repository — .gitignore excludes *.backup.json.
  */
 const fs = require('node:fs');
 const path = require('node:path');
@@ -26,32 +29,32 @@ if (!URL) {
 
 /** Same order copy-database.cjs writes in, so a restore can replay the file top to bottom. */
 const TABLES = [
-  'level',
-  'category',
-  'user',
-  'refreshToken',
-  'studentProfile',
-  'track',
-  'module',
-  'topic',
-  'competency',
-  'moduleQuiz',
-  'trackAssessment',
-  'quizQuestion',
-  'quizAttempt',
-  'enrollment',
-  'topicProgress',
-  'submission',
-  'submissionRubricCheck',
-  'storedFile',
-  'credential',
-  'auditLog',
-  'officeHourSlot',
-  'officeHourBooking',
-  'bookmark',
-  'collection',
-  'collectionItem',
-  'notification',
+  'Level',
+  'Category',
+  'User',
+  'RefreshToken',
+  'StudentProfile',
+  'Track',
+  'Module',
+  'Topic',
+  'Competency',
+  'ModuleQuiz',
+  'TrackAssessment',
+  'QuizQuestion',
+  'QuizAttempt',
+  'Enrollment',
+  'TopicProgress',
+  'Submission',
+  'SubmissionRubricCheck',
+  'StoredFile',
+  'Credential',
+  'AuditLog',
+  'OfficeHourSlot',
+  'OfficeHourBooking',
+  'Bookmark',
+  'Collection',
+  'CollectionItem',
+  'Notification',
 ];
 
 async function main() {
@@ -61,29 +64,35 @@ async function main() {
 
   const prisma = new PrismaClient({ datasources: { db: { url: URL } } });
   const data = {};
+  const missing = [];
   let rows = 0;
 
   try {
     for (const table of TABLES) {
-      const model = prisma[table];
-      if (!model) {
-        console.error(`  ! no such table: ${table}`);
-        continue;
+      try {
+        // Double-quoted so the mixed-case table names resolve; no user input goes in here.
+        const collected = await prisma.$queryRawUnsafe(`SELECT * FROM "${table}"`);
+        data[table] = collected;
+        rows += collected.length;
+        console.log(`  ${String(collected.length).padStart(5)}  ${table}`);
+      } catch (error) {
+        missing.push(table);
+        console.log(`      -  ${table} (skipped: ${error.message.split('\n')[0]})`);
       }
-      // The whole platform is a few hundred rows; one read per table keeps this simple
-      // and means no row can be missed or repeated between pages.
-      const collected = await model.findMany();
-      data[table] = collected;
-      rows += collected.length;
-      console.log(`  ${String(collected.length).padStart(5)}  ${table}`);
     }
 
     fs.writeFileSync(
       file,
-      JSON.stringify({ takenAt: new Date().toISOString(), tables: data }, null, 2),
+      JSON.stringify(
+        { takenAt: new Date().toISOString(), tables: data },
+        // Row counts can come back as BigInt from Postgres; keep them readable.
+        (_key, value) => (typeof value === 'bigint' ? Number(value) : value),
+        2,
+      ),
     );
     const mb = (fs.statSync(file).size / (1024 * 1024)).toFixed(2);
-    console.log(`\nBacked up ${rows} rows from ${TABLES.length} tables.`);
+    console.log(`\nBacked up ${rows} rows from ${TABLES.length - missing.length} tables.`);
+    if (missing.length) console.log(`Skipped (not in this database): ${missing.join(', ')}`);
     console.log(`Saved to ${file} (${mb} MB)`);
     console.log('This file contains personal data and password hashes — keep it private.');
   } finally {
