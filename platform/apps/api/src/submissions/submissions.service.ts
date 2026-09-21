@@ -177,11 +177,17 @@ export class SubmissionsService {
           select: { evaluatorId: true },
         })
       : [];
+    // Somebody may evaluate a course they are also enrolled in. They cannot review their
+    // own work, so they are dropped here first — otherwise a submission by the course's
+    // only evaluator would be announced to nobody at all.
+    const others = assigned
+      .map((a) => a.evaluatorId)
+      .filter((id) => id !== actor.id);
 
     const audience =
-      COURSE_SCOPE_ON && assigned.length > 0
+      COURSE_SCOPE_ON && others.length > 0
         ? {
-            id: { in: assigned.map((a) => a.evaluatorId), not: actor.id },
+            id: { in: others },
             roles: { has: UserRole.EVALUATOR },
           }
         : {
@@ -351,6 +357,9 @@ export class SubmissionsService {
       return { id: '__no-course-assigned__' };
     }
     return {
+      // Their own work never appears in their review queue: an evaluator may be enrolled
+      // as a student on a course they review, and nobody marks their own submission.
+      studentId: { not: actor.id },
       OR: [
         { topic: { module: { trackId: { in: trackIds } } } },
         { module: { trackId: { in: trackIds } } },
