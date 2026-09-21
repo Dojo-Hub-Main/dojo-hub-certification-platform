@@ -2,7 +2,7 @@
 
 import { useRef, useState } from 'react';
 import { FileText, Upload, X } from 'lucide-react';
-import { StoredFileKind } from '@dojo-hub/shared';
+import { MAX_UPLOAD_BYTES, MAX_UPLOAD_LABEL, StoredFileKind } from '@dojo-hub/shared';
 import { ApiError } from '@/lib/api-client';
 import { uploadFile } from '@/lib/upload';
 
@@ -13,8 +13,6 @@ export interface UploadedFile {
   /** Public URL of the stored object — used by callers that embed the file (e.g. lecture videos). */
   url?: string;
 }
-
-const MAX_UPLOAD_BYTES = 250 * 1024 * 1024; // Mirrors the API's PresignUploadDto cap.
 
 function formatBytes(bytes: number): string {
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -47,7 +45,12 @@ export function FileDropzone({
     // Checked here as well as server-side so an oversized file fails instantly
     // instead of after a long upload that the API would reject anyway.
     if (file.size > MAX_UPLOAD_BYTES) {
-      setError(`"${file.name}" is ${formatBytes(file.size)}. The maximum upload size is 250 MB.`);
+      setError(
+        `"${file.name}" is ${formatBytes(file.size)}, and the limit is ${MAX_UPLOAD_LABEL}.` +
+          (kind === StoredFileKind.VIDEO
+            ? ' Upload the video to YouTube and paste its link below instead, or compress it first.'
+            : ' Compress it or split it into smaller files.'),
+      );
       if (inputRef.current) inputRef.current.value = '';
       return;
     }
@@ -97,7 +100,7 @@ export function FileDropzone({
             <p className="text-xs text-navy-600">
               Drop {noun ?? (kind === 'VIDEO' ? 'a video' : 'a document')} here or click to browse
             </p>
-            <p className="text-[13px] text-navy-400 mt-0.5">Up to 250 MB</p>
+            <p className="text-[13px] text-navy-400 mt-0.5">Up to {MAX_UPLOAD_LABEL}</p>
           </>
         )}
       </div>

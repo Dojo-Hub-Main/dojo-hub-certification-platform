@@ -1,4 +1,4 @@
-import { StoredFileKind } from '@dojo-hub/shared';
+import { MAX_UPLOAD_LABEL, StoredFileKind } from '@dojo-hub/shared';
 import { api } from './api-client';
 
 export async function uploadFile(
@@ -20,8 +20,18 @@ export async function uploadFile(
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable && onProgress) onProgress(Math.round((e.loaded / e.total) * 100));
     };
-    xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`Upload failed (${xhr.status})`)));
-    xhr.onerror = () => reject(new Error('Upload failed'));
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) return resolve();
+      // 413 comes from the storage itself, after the whole file has gone up.
+      reject(
+        new Error(
+          xhr.status === 413
+            ? `the file is too large for storage (limit ${MAX_UPLOAD_LABEL}). For a longer video, paste a video link instead.`
+            : `the storage rejected it (error ${xhr.status}).`,
+        ),
+      );
+    };
+    xhr.onerror = () => reject(new Error('the connection dropped part-way through. Check your internet and try again.'));
     xhr.send(file);
   });
 

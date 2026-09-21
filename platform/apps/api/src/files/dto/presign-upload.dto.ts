@@ -1,8 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { StoredFileKind } from '@dojo-hub/shared';
+import { MAX_UPLOAD_BYTES, StoredFileKind } from '@dojo-hub/shared';
 import { IsEnum, IsInt, IsString, Max, MinLength } from 'class-validator';
-
-const MAX_UPLOAD_BYTES = 250 * 1024 * 1024; // 250MB
 
 export class PresignUploadDto {
   @ApiProperty()
@@ -16,7 +14,10 @@ export class PresignUploadDto {
 
   @ApiProperty()
   @IsInt()
-  @Max(MAX_UPLOAD_BYTES)
+  // The storage refuses anything larger, so the platform refuses it first and says why.
+  @Max(MAX_UPLOAD_BYTES, {
+    message: `Files must be ${MAX_UPLOAD_BYTES / (1024 * 1024)} MB or smaller. For a longer video, paste a video link instead of uploading the file.`,
+  })
   sizeBytes: number;
 
   @ApiProperty({ enum: StoredFileKind })
