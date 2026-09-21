@@ -24,7 +24,8 @@ export interface AuthUser {
 interface AuthContextValue {
   user: AuthUser | null | undefined;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<AuthUser>;
+  /** `rememberMe` false ends the session when the browser closes. */
+  login: (email: string, password: string, rememberMe?: boolean) => Promise<AuthUser>;
   /** Public sign-up always creates a student account. */
   register: (name: string, email: string, password: string) => Promise<AuthUser>;
   logout: () => Promise<void>;
@@ -45,8 +46,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   });
 
   const loginMutation = useMutation({
-    mutationFn: ({ email, password }: { email: string; password: string }) =>
-      api.post<{ user: AuthUser }>('/auth/login', { email, password }),
+    mutationFn: (input: { email: string; password: string; rememberMe: boolean }) =>
+      api.post<{ user: AuthUser }>('/auth/login', input),
   });
 
   const registerMutation = useMutation({
@@ -63,8 +64,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   });
 
   const login = useCallback(
-    async (email: string, password: string) => {
-      const { user } = await loginMutation.mutateAsync({ email, password });
+    async (email: string, password: string, rememberMe = true) => {
+      const { user } = await loginMutation.mutateAsync({ email, password, rememberMe });
       queryClient.setQueryData(['me'], user);
       await queryClient.invalidateQueries();
       return user;

@@ -91,6 +91,7 @@ export class AuthController {
       session.accessToken,
       session.refreshToken,
       session.refreshTtlMs,
+      session.remember,
     );
     return { user: session.user };
   }
@@ -110,6 +111,7 @@ export class AuthController {
       session.accessToken,
       session.refreshToken,
       session.refreshTtlMs,
+      session.remember,
     );
     return { user: session.user };
   }
@@ -160,6 +162,7 @@ export class AuthController {
       session.accessToken,
       session.refreshToken,
       session.refreshTtlMs,
+      session.remember,
     );
     return { user: session.user };
   }
@@ -188,6 +191,7 @@ export class AuthController {
     accessToken: string,
     refreshToken: string,
     refreshTtlMs: number,
+    remember = true,
   ) {
     const isProd = this.configService.get<string>('nodeEnv') === 'production';
     // In production the web app and API are served from different hostnames (e.g. two
@@ -200,15 +204,17 @@ export class AuthController {
       sameSite: isProd ? ('none' as const) : ('lax' as const),
       secure: isProd,
     };
+    // A cookie with no expiry lives only until the browser closes, which is exactly what
+    // "Keep me signed in", left unticked, should mean.
     res.cookie('access_token', accessToken, {
       httpOnly: true,
       ...crossSite,
-      maxAge: 15 * 60 * 1000,
+      ...(remember ? { maxAge: 15 * 60 * 1000 } : {}),
     });
     res.cookie('refresh_token', refreshToken, {
       httpOnly: true,
       ...crossSite,
-      maxAge: refreshTtlMs,
+      ...(remember ? { maxAge: refreshTtlMs } : {}),
       // Must match the app's global 'api' prefix (see main.ts) — every auth route is
       // actually served under /api/auth/*, not /auth/*. A mismatched path here means
       // the browser silently never sends this cookie back on any real request.

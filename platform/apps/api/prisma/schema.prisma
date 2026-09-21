@@ -164,6 +164,9 @@ model RefreshToken {
   revoked   Boolean  @default(false)
   /// The workspace this session is acting as, so a refresh keeps the person where they were.
   activeRole UserRole?
+  /// False when the person left "Keep me signed in" unticked: the session then lives in
+  /// the browser only until it closes, and expires far sooner.
+  rememberMe Boolean  @default(true)
   createdAt DateTime @default(now())
 
   @@index([userId])

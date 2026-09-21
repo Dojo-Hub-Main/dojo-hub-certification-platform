@@ -22,6 +22,9 @@ import { ChangePasswordDto } from './dto/change-password.dto';
 
 const BCRYPT_ROUNDS = 12;
 
+/** How long a session lasts when "Keep me signed in" was left unticked. */
+const SHORT_SESSION_TTL = '12h';
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -271,6 +274,7 @@ export class AuthService {
     // Signing in opens the account's default workspace; someone holding several roles
     // then picks one on the workspace screen, which calls switchWorkspace.
     const requestUser = this.toRequestUser(user);
+    const remember = dto.rememberMe ?? true;
 
     await this.auditService.log({
       actor: requestUser,
@@ -283,7 +287,7 @@ export class AuthService {
       severity: AuditLogSeverity.SUCCESS,
     });
 
-    return this.issueSession(requestUser);
+    return this.issueSession(requestUser, remember);
   }
 
   async refresh(rawRefreshToken: string | undefined) {
@@ -313,8 +317,11 @@ export class AuthService {
 
     // Stay in the same workspace — unless that role has since been removed, in which case
     // the session falls back to the account's default workspace.
+    // Keep this session's own lifetime too: one the person did not ask to be remembered
+    // must not quietly become a remembered one by refreshing.
     return this.issueSession(
       this.toRequestUser(user, stored.activeRole ?? undefined),
+      stored.rememberMe,
     );
   }
 
@@ -338,14 +345,24 @@ export class AuthService {
       );
     }
 
+    let remember = true;
     if (rawRefreshToken) {
-      await this.prisma.refreshToken.updateMany({
-        where: { tokenHash: this.hashToken(rawRefreshToken), userId: user.id },
-        data: { revoked: true },
+      const current = await this.prisma.refreshToken.findUnique({
+        where: { tokenHash: this.hashToken(rawRefreshToken) },
       });
+      if (current?.userId === user.id) {
+        remember = current.rememberMe;
+        await this.prisma.refreshToken.update({
+          where: { id: current.id },
+          data: { revoked: true },
+        });
+      }
     }
 
-    const session = await this.issueSession(this.toRequestUser(user, role));
+    const session = await this.issueSession(
+      this.toRequestUser(user, role),
+      remember,
+    );
     await this.auditService.log({
       actor: session.user,
       action: `Switched workspace to ${role}`,
@@ -435,7 +452,12 @@ export class AuthService {
     return { success: true };
   }
 
-  private async issueSession(user: RequestUser) {
+  /**
+   * Starts a session. A remembered one lasts as long as JWT_REFRESH_TTL (a week by
+   * default); one that is not remembered lasts hours, and its cookies are dropped by the
+   * browser when it closes — see setSessionCookies in the controller.
+   */
+  private async issueSession(user: RequestUser, remember = true) {
     const accessToken = this.jwtService.sign(
       { sub: user.id, role: user.role },
       {
@@ -448,7 +470,9 @@ export class AuthService {
 
     const rawRefreshToken = randomBytes(48).toString('hex');
     const refreshTtlMs = this.parseTtlToMs(
-      this.configService.get<string>('jwt.refreshTtl')!,
+      remember
+        ? this.configService.get<string>('jwt.refreshTtl')!
+        : SHORT_SESSION_TTL,
     );
 
     await this.prisma.refreshToken.create({
@@ -457,10 +481,17 @@ export class AuthService {
         tokenHash: this.hashToken(rawRefreshToken),
         expiresAt: new Date(Date.now() + refreshTtlMs),
         activeRole: user.role,
+        rememberMe: remember,
       },
     });
 
-    return { user, accessToken, refreshToken: rawRefreshToken, refreshTtlMs };
+    return {
+      user,
+      accessToken,
+      refreshToken: rawRefreshToken,
+      refreshTtlMs,
+      remember,
+    };
   }
 
   private omitPasswordHash<T extends { passwordHash: string }>(

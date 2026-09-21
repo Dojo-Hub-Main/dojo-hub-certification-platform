@@ -16,6 +16,7 @@ import { PasswordInput } from '@/components/ui/PasswordInput';
 const schema = z.object({
   email: z.string().email('Enter a valid email address'),
   password: z.string().min(1, 'Password is required'),
+  rememberMe: z.boolean(),
 });
 type FormValues = z.infer<typeof schema>;
 
@@ -61,7 +62,11 @@ function LoginForm() {
     handleSubmit,
     getValues,
     formState: { errors, isSubmitting },
-  } = useForm<FormValues>({ resolver: zodResolver(schema), defaultValues: { email: prefillEmail } });
+  } = useForm<FormValues>({
+    resolver: zodResolver(schema),
+    // Ticked by default, which is how signing in behaved before the choice existed.
+    defaultValues: { email: prefillEmail, rememberMe: true },
+  });
 
   const handleResend = async () => {
     setResendState('sending');
@@ -78,7 +83,7 @@ function LoginForm() {
     setError(null);
     setResendState('idle');
     try {
-      const user = await login(values.email, values.password);
+      const user = await login(values.email, values.password, values.rememberMe);
       const next = safeNext(params.get('next'));
       // More than one role: pick a workspace first, carrying the destination along.
       if ((user.roles?.length ?? 0) > 1) {
@@ -166,6 +171,23 @@ function LoginForm() {
               Forgot your password?
             </Link>
           </div>
+        </div>
+
+        {/* Unticked, the session ends with the browser — what someone on a shared or
+            office computer expects when they just close the window. */}
+        <div className="space-y-1">
+          <label htmlFor="rememberMe" className="flex items-start gap-2.5 cursor-pointer">
+            <input
+              id="rememberMe"
+              type="checkbox"
+              {...register('rememberMe')}
+              className="mt-0.5 w-4 h-4 accent-crimson-600 cursor-pointer"
+            />
+            <span className="text-sm font-semibold text-navy-700">Keep me signed in on this device</span>
+          </label>
+          <p className="text-xs text-navy-400 pl-[26px]">
+            Leave this unticked on a shared computer — closing the browser will sign you out.
+          </p>
         </div>
 
         <Button type="submit" loading={isSubmitting} className="w-full py-3.5 text-base">
