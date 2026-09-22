@@ -28,6 +28,19 @@ export const TrackStatus = {
 } as const;
 export type TrackStatus = (typeof TrackStatus)[keyof typeof TrackStatus];
 
+export const TrackAccess = {
+  FREE: 'FREE',
+  PAID: 'PAID',
+} as const;
+export type TrackAccess = (typeof TrackAccess)[keyof typeof TrackAccess];
+
+export const EnrollmentApproval = {
+  PENDING: 'PENDING',
+  APPROVED: 'APPROVED',
+  DECLINED: 'DECLINED',
+} as const;
+export type EnrollmentApproval = (typeof EnrollmentApproval)[keyof typeof EnrollmentApproval];
+
 export const EnrollmentStatus = {
   NOT_STARTED: 'NOT_STARTED',
   IN_PROGRESS: 'IN_PROGRESS',

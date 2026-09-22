@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Pencil, Trash2, X } from 'lucide-react';
-import { CategoryDto, StoredFileKind, TrackDifficulty, TrackSummaryDto } from '@dojo-hub/shared';
+import { CategoryDto, StoredFileKind, TrackAccess, TrackDifficulty, TrackSummaryDto } from '@dojo-hub/shared';
 import { api, ApiError } from '@/lib/api-client';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -25,6 +25,8 @@ export default function CurriculumProgramsPage() {
   const [description, setDescription] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [difficulty, setDifficulty] = useState<TrackDifficulty>('BEGINNER');
+  // Free opens as soon as a student enrols; paid waits for an administrator to approve.
+  const [access, setAccess] = useState<TrackAccess>('FREE');
   const [durationWeeks, setDurationWeeks] = useState(8);
   const [icon, setIcon] = useState('📘');
   // Cover photo is optional — an empty list leaves the generated illustration in place.
@@ -34,7 +36,7 @@ export default function CurriculumProgramsPage() {
 
   const create = useMutation({
     mutationFn: () =>
-      api.post('/tracks', { title, description, icon, categoryId, difficulty, durationWeeks, coverImageUrl: cover[0]?.url }),
+      api.post('/tracks', { title, description, icon, categoryId, difficulty, access, durationWeeks, coverImageUrl: cover[0]?.url }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tracks'] });
       setTitle('');
@@ -85,6 +87,15 @@ export default function CurriculumProgramsPage() {
             <EmojiPicker value={icon} onChange={setIcon} />
           </Field>
         </div>
+        <Field label="Enrolment">
+          <select value={access} onChange={(e) => setAccess(e.target.value as TrackAccess)} className="input">
+            <option value="FREE">Free — students start straight away</option>
+            <option value="PAID">Paid — you approve each student</option>
+          </select>
+          <p className="mt-1 text-[12px] text-navy-400">
+            No price is held here. For a paid course, students request a place and you approve them once payment is settled.
+          </p>
+        </Field>
         <Field label="Cover Photo (optional)">
           <FileDropzone kind={StoredFileKind.DOCUMENT} accept="image/*" files={cover} onChange={setCover} noun="an image" />
           <p className="mt-1 text-[12px] text-navy-400">
@@ -131,6 +142,7 @@ export default function CurriculumProgramsPage() {
                 <span className="text-2xl">{t.icon}</span>
                 <div className="flex gap-1.5">
                   <Badge tone={t.status === 'PUBLISHED' ? 'green' : 'amber'}>{t.status === 'PUBLISHED' ? 'Live' : 'Draft'}</Badge>
+                  <Badge tone={t.access === 'PAID' ? 'red' : 'blue'}>{t.access === 'PAID' ? 'Paid' : 'Free'}</Badge>
                   <Badge tone="navy">{t.category.name}</Badge>
                 </div>
               </div>
@@ -202,6 +214,7 @@ function ProgramEditForm({
   const [description, setDescription] = useState(track.description);
   const [categoryId, setCategoryId] = useState(track.category.id);
   const [difficulty, setDifficulty] = useState<TrackDifficulty>(track.difficulty);
+  const [access, setAccess] = useState<TrackAccess>(track.access ?? 'FREE');
   const [durationWeeks, setDurationWeeks] = useState(track.durationWeeks);
   const [icon, setIcon] = useState(track.icon);
   const [cover, setCover] = useState<UploadedFile[]>([]);
@@ -219,6 +232,7 @@ function ProgramEditForm({
         icon,
         categoryId,
         difficulty,
+        access,
         durationWeeks,
         coverImageUrl: nextCover,
       }),
@@ -270,6 +284,16 @@ function ProgramEditForm({
         </select>
         <EmojiPicker value={icon} onChange={setIcon} />
       </div>
+
+      <select
+        value={access}
+        onChange={(e) => setAccess(e.target.value as TrackAccess)}
+        aria-label="Enrolment"
+        className="input"
+      >
+        <option value="FREE">Free — students start straight away</option>
+        <option value="PAID">Paid — you approve each student</option>
+      </select>
 
       <div>
         <p className="text-[12px] font-mono uppercase tracking-wider font-bold text-navy-500 mb-1">Cover Photo</p>

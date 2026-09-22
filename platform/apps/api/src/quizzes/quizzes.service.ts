@@ -7,6 +7,7 @@ import {
 import {
   AttemptTargetType,
   AuditLogSeverity,
+  EnrollmentApproval,
   NotificationType,
   QuizQuestionType,
   SubjectiveGradedBy,
@@ -313,10 +314,15 @@ export class QuizzesService {
 
     const enrolment = await this.prisma.enrollment.findUnique({
       where: { userId_trackId: { userId: actor.id, trackId } },
-      select: { id: true },
+      select: { approval: true },
     });
     if (!enrolment) {
       throw new BadRequestException('Enrol in this course to take its quizzes.');
+    }
+    if (enrolment.approval !== EnrollmentApproval.APPROVED) {
+      throw new BadRequestException(
+        'Your place on this course is waiting for approval. You will be emailed once it is ready.',
+      );
     }
   }
 

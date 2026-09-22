@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Award, BookOpen, Home, Users, Layers, ClipboardCheck, Activity, Calendar, History, Shapes, X } from 'lucide-react';
+import { Activity, Award, BookOpen, Calendar, ClipboardCheck, History, Home, Layers, Shapes, UserCheck, Users, X } from 'lucide-react';
 import { UserRole } from '@dojo-hub/shared';
 import DojoHubLogo from '../DojoHubLogo';
 import { cn } from '../ui/cn';
@@ -56,6 +56,7 @@ export function Sidebar({
       { href: '/metrics', name: 'Platform Metrics', icon: Activity },
       { href: '/users', name: 'User Directory', icon: Users },
       { href: '/curriculum', name: 'Curriculum Builder', icon: Layers },
+      { href: '/enrolment-requests', name: 'Enrolment Requests', icon: UserCheck },
       { href: '/settings', name: 'Categories & Levels', icon: Shapes },
       { href: '/audit-log', name: 'Audit Log', icon: History },
     ],

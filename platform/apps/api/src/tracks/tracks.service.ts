@@ -6,6 +6,7 @@ import {
 import {
   AccountStatus,
   AuditLogSeverity,
+  EnrollmentApproval,
   TrackStatus,
   UserRole,
 } from '@dojo-hub/shared';
@@ -79,6 +80,8 @@ export class TracksService {
       category: track.category,
       difficulty: track.difficulty,
       durationWeeks: track.durationWeeks,
+      // Free or paid is shown on course cards, so people know before they click.
+      access: track.access,
       status: track.status,
       moduleCount: track.modules.length,
       topicCount: track.modules.reduce((sum, m) => sum + m.topics.length, 0),
@@ -107,9 +110,13 @@ export class TracksService {
     if (!isStaff) {
       const enrolment = await this.prisma.enrollment.findUnique({
         where: { userId_trackId: { userId: user.id, trackId: id } },
-        select: { id: true },
+        select: { approval: true },
       });
-      if (!enrolment) return this.toSyllabus(track);
+      // A request to join a paid course unlocks nothing until an administrator approves
+      // it, so an unapproved student sees exactly what a visitor sees.
+      if (!enrolment || enrolment.approval !== EnrollmentApproval.APPROVED) {
+        return this.toSyllabus(track);
+      }
     }
 
     return this.stripAnswerKeys(track);

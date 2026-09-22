@@ -1,6 +1,8 @@
 import {
   AccountStatus,
   AttemptTargetType,
+  EnrollmentApproval,
+  TrackAccess,
   AuditLogSeverity,
   CredentialStatus,
   EnrollmentStatus,
@@ -146,6 +148,8 @@ export interface TrackDto {
   title: string;
   description: string;
   icon: string;
+  /** FREE opens on enrolment; PAID waits for an administrator to approve the student. */
+  access?: TrackAccess;
   /** Uploaded cover photo; null falls back to the generated illustration. */
   coverImageUrl: string | null;
   categoryId: string;
@@ -163,6 +167,7 @@ export interface TrackSummaryDto {
   title: string;
   description: string;
   icon: string;
+  access?: TrackAccess;
   /** Uploaded cover photo; null falls back to the generated illustration. */
   coverImageUrl: string | null;
   category: CategoryDto;
@@ -187,6 +192,7 @@ export interface EnrolledTrackDto {
   title: string;
   description: string;
   icon: string;
+  access?: TrackAccess;
   /** Uploaded cover photo; null falls back to the generated illustration. */
   coverImageUrl: string | null;
   category: CategoryDto;
@@ -200,6 +206,8 @@ export interface EnrollmentDto {
   userId: string;
   trackId: string;
   status: EnrollmentStatus;
+  /** PENDING on a paid course until an administrator approves; content stays locked. */
+  approval?: EnrollmentApproval;
   enrolledAt: string;
   completedTopicCount: number;
   totalTopicCount: number;

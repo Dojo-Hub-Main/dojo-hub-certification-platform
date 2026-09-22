@@ -41,7 +41,10 @@ export function CoursePreview({
   });
 
   const { data: enrollments = [] } = useMyEnrollments();
-  const isEnrolled = enrollments.some((e) => e.trackId === trackId);
+  const enrolment = enrollments.find((e) => e.trackId === trackId);
+  const awaitingApproval = enrolment?.approval === 'PENDING';
+  const isEnrolled = !!enrolment && !awaitingApproval;
+  const isPaid = track?.access === 'PAID';
 
   // Enrolling from here is an explicit click on a button that says so, then straight
   // into the course — the alternative was sending them to the player to find a second
@@ -207,13 +210,24 @@ export function CoursePreview({
 
             <div className="p-5 space-y-4">
               <div>
-                <p className="text-2xl font-extrabold text-navy-950">Free</p>
+                <p className="text-2xl font-extrabold text-navy-950">{isPaid ? 'Paid course' : 'Free'}</p>
                 <p className="text-xs text-navy-500">
-                  {totalSeconds > 0 ? `${Math.round(totalSeconds / 60)} minutes of lessons` : 'Project-based course'}
+                  {isPaid
+                    ? 'Request a place and Dojo Hub will be in touch about fees.'
+                    : totalSeconds > 0
+                      ? `${Math.round(totalSeconds / 60)} minutes of lessons`
+                      : 'Project-based course'}
                 </p>
               </div>
 
-              {user && isEnrolled ? (
+              {user && awaitingApproval ? (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                  <p className="font-bold">Waiting for approval</p>
+                  <p className="text-xs mt-0.5">
+                    Dojo Hub will open the lessons once your payment is settled, and you will be emailed.
+                  </p>
+                </div>
+              ) : user && isEnrolled ? (
                 <Link href={`/learning/${track.id}`} className="block">
                   <Button className="w-full">
                     <PlayCircle className="w-4 h-4" /> Go to this course
@@ -225,7 +239,7 @@ export function CoursePreview({
                   onClick={() => enroll.mutate()}
                   loading={enroll.isPending}
                 >
-                  Enroll in this course
+                  {isPaid ? 'Request a place' : 'Enroll in this course'}
                 </Button>
               ) : (
                 <>
@@ -298,7 +312,7 @@ export function CoursePreview({
               </p>
               {user ? (
                 <Button className="mt-4" onClick={() => enroll.mutate()} loading={enroll.isPending}>
-                  Enroll in this course
+                  {isPaid ? 'Request a place' : 'Enroll in this course'}
                 </Button>
               ) : (
                 <Link href={`/register?next=${encodeURIComponent(coursePath)}`} className="inline-block mt-4">

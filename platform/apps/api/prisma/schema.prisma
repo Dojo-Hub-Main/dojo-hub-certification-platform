@@ -33,6 +33,20 @@ enum TrackStatus {
   PUBLISHED
 }
 
+/// Whether a course is open to anyone or has to be paid for. No price is held here:
+/// payment is arranged off the platform, and an administrator approves the student.
+enum TrackAccess {
+  FREE
+  PAID
+}
+
+/// Where a request to join a paid course has got to. Free courses are APPROVED at once.
+enum EnrollmentApproval {
+  PENDING
+  APPROVED
+  DECLINED
+}
+
 enum EnrollmentStatus {
   NOT_STARTED
   IN_PROGRESS
@@ -151,6 +165,7 @@ model User {
   assignedEvaluators    EvaluatorAssignment[]  @relation("EvaluatorAssignmentAssignedBy")
   evaluatorInvitations  EvaluatorInvitation[]  @relation("EvaluatorInvitationUser")
   sentInvitations       EvaluatorInvitation[]  @relation("EvaluatorInvitationSentBy")
+  approvedEnrollments   Enrollment[]           @relation("EnrollmentApprover")
 
   @@index([role])
 }
@@ -260,6 +275,8 @@ model Track {
   category      Category        @relation(fields: [categoryId], references: [id])
   difficulty    TrackDifficulty
   durationWeeks Int
+  /// FREE opens as soon as a student enrols; PAID waits for an administrator to approve.
+  access        TrackAccess     @default(FREE)
   examEnabled   Boolean         @default(true)
   status        TrackStatus     @default(DRAFT)
   createdAt     DateTime        @default(now())
@@ -433,6 +450,11 @@ model Enrollment {
   trackId    String
   track      Track            @relation(fields: [trackId], references: [id], onDelete: Cascade)
   status     EnrollmentStatus @default(NOT_STARTED)
+  /// Paid courses start PENDING and unlock only once an administrator approves.
+  approval   EnrollmentApproval @default(APPROVED)
+  approvedAt DateTime?
+  approvedById String?
+  approvedBy   User?   @relation("EnrollmentApprover", fields: [approvedById], references: [id], onDelete: SetNull)
   enrolledAt DateTime         @default(now())
 
   @@unique([userId, trackId])

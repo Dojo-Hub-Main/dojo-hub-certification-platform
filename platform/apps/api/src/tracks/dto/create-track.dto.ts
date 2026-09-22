@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { TrackDifficulty } from '@dojo-hub/shared';
+import { TrackAccess, TrackDifficulty } from '@dojo-hub/shared';
 import {
   IsBoolean,
   IsEnum,
@@ -35,6 +35,12 @@ export class CreateTrackDto {
   @ApiProperty()
   @IsString()
   categoryId: string;
+
+  /** Free courses open on enrolment; paid ones wait for an administrator to approve. */
+  @ApiProperty({ enum: TrackAccess, required: false })
+  @IsOptional()
+  @IsEnum(TrackAccess)
+  access?: TrackAccess;
 
   @ApiProperty({ enum: TrackDifficulty })
   @IsEnum(TrackDifficulty)

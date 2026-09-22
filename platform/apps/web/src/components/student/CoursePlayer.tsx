@@ -116,7 +116,13 @@ export function CoursePlayer({ trackId }: { trackId: string }) {
     );
   }
 
-  const isEnrolled = !!enrollment;
+  // A paid course grants nothing until an administrator approves the request, so
+  // "enrolled" and "has access" are no longer the same thing.
+  const isPaid = track.access === 'PAID';
+  const awaitingApproval = enrollment?.approval === 'PENDING';
+  const requestDeclined = enrollment?.approval === 'DECLINED';
+  const isEnrolled = !!enrollment && !awaitingApproval && !requestDeclined;
+  const joinLabel = isPaid ? 'Request a place' : 'Enroll in this Track';
 
   /**
    * What follows a lesson, as on LinkedIn Learning: the next lesson in the module, or — at
@@ -162,13 +168,15 @@ export function CoursePlayer({ trackId }: { trackId: string }) {
         <Link href="/learning" className="flex items-center gap-1 text-xs text-navy-500 hover:text-navy-950 font-semibold">
           <ChevronLeft className="w-4 h-4" /> Back to My Learning
         </Link>
-        {isEnrolled ? (
+        {awaitingApproval ? (
+          <Badge tone="amber">Waiting for approval</Badge>
+        ) : isEnrolled ? (
           <Button size="sm" variant="outline" onClick={() => setConfirmUnenroll(true)}>
             Unenroll
           </Button>
         ) : (
           <Button size="sm" onClick={() => enroll.mutate()} loading={enroll.isPending}>
-            Enroll in this Track
+            {requestDeclined ? 'Ask again' : joinLabel}
           </Button>
         )}
       </div>
@@ -178,14 +186,34 @@ export function CoursePlayer({ trackId }: { trackId: string }) {
           <Badge tone="red">{track.category.name}</Badge>
           <Badge tone="gray">{track.difficulty}</Badge>
           {!isEnrolled && <Badge tone="amber">Syllabus Only</Badge>}
+          {isPaid && <Badge tone="red">Paid course</Badge>}
         </div>
         <h1 className="text-2xl font-extrabold text-navy-950">{track.title}</h1>
         <p className="text-sm text-navy-500 mt-1">{track.description}</p>
       </div>
 
-      {!isEnrolled && (
+      {awaitingApproval && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-900 space-y-1">
+          <p className="font-bold">Your place is waiting for approval</p>
+          <p>
+            This is a paid course. Dojo Hub will confirm your place once payment is settled, and you will be emailed
+            the moment the lessons open. Nothing else is needed from you here.
+          </p>
+        </div>
+      )}
+
+      {requestDeclined && (
+        <div className="bg-crimson-50 border border-crimson-200 rounded-xl p-4 text-sm text-crimson-800 space-y-1">
+          <p className="font-bold">Your request was not approved</p>
+          <p>Check your email for the reason. If you have already paid, ask again below or contact Dojo Hub.</p>
+        </div>
+      )}
+
+      {!isEnrolled && !awaitingApproval && !requestDeclined && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800">
-          You&apos;re browsing the syllabus. Enroll to watch the lessons, track progress, submit competency evidence and take assessments.
+          {isPaid
+            ? "You're browsing the syllabus. This is a paid course — request a place, and Dojo Hub will open the lessons once payment is settled."
+            : "You're browsing the syllabus. Enroll to watch the lessons, track progress, submit competency evidence and take assessments."}
         </div>
       )}
 
@@ -277,7 +305,7 @@ export function CoursePlayer({ trackId }: { trackId: string }) {
                     towards your certificate.
                   </p>
                   <Button className="mt-4" onClick={() => enroll.mutate()} loading={enroll.isPending}>
-                    Enroll in this Track
+                    {joinLabel}
                   </Button>
                 </div>
               </>
@@ -294,7 +322,7 @@ export function CoursePlayer({ trackId }: { trackId: string }) {
                   work towards your certificate.
                 </p>
                 <Button className="mt-5" onClick={() => enroll.mutate()} loading={enroll.isPending}>
-                  Enroll in this Track
+                  {joinLabel}
                 </Button>
               </div>
             )

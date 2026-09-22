@@ -1,4 +1,4 @@
-import { Controller, Delete, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { UserRole } from '@dojo-hub/shared';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -16,6 +16,32 @@ export class EnrollmentsController {
   @Get('me')
   listMine(@CurrentUser() user: RequestUser) {
     return this.enrollmentsService.listMine(user.id);
+  }
+
+  /*
+   * Paid courses: a student's request waits here until an administrator confirms payment
+   * has been settled. These three are the administrator's side of that.
+   */
+  @Roles(UserRole.ADMIN)
+  @Get('requests')
+  pendingRequests() {
+    return this.enrollmentsService.pendingRequests();
+  }
+
+  @Roles(UserRole.ADMIN)
+  @Post('requests/:id/approve')
+  approve(@CurrentUser() actor: RequestUser, @Param('id') id: string) {
+    return this.enrollmentsService.approve(actor, id);
+  }
+
+  @Roles(UserRole.ADMIN)
+  @Post('requests/:id/decline')
+  decline(
+    @CurrentUser() actor: RequestUser,
+    @Param('id') id: string,
+    @Body() body: { reason?: string },
+  ) {
+    return this.enrollmentsService.decline(actor, id, body?.reason);
   }
 
   @Post('tracks/:trackId')
