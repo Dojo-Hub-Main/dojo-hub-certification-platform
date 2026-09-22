@@ -1,7 +1,8 @@
 'use client';
 
-import { FileText, Link2, Plus, Video, X } from 'lucide-react';
-import { StoredFileKind, TopicResourceKind } from '@dojo-hub/shared';
+import { useState } from 'react';
+import { FileText, Link2, Plus, Upload, Video, X } from 'lucide-react';
+import { MAX_UPLOAD_LABEL, StoredFileKind, TopicResourceKind } from '@dojo-hub/shared';
 import { FileDropzone, UploadedFile } from '@/components/student/FileDropzone';
 
 /**
@@ -42,6 +43,11 @@ export function cleanResources(rows: ResourceRow[]): ResourceRow[] {
     .filter((r) => r.title || r.url);
 }
 
+/** A filename without its extension, as a starting title for an uploaded video. */
+function titleFromFileName(name: string): string {
+  return name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim().slice(0, 200);
+}
+
 export function TopicExtrasFields({
   documents,
   onDocumentsChange,
@@ -53,6 +59,11 @@ export function TopicExtrasFields({
   resources: ResourceRow[];
   onResourcesChange: (next: ResourceRow[]) => void;
 }) {
+  // The uploader is hidden until asked for, so the common case — pasting a YouTube link —
+  // stays one click, while a video on the author's own computer is still uploadable here
+  // exactly as it is for the main lesson video.
+  const [showUploader, setShowUploader] = useState(false);
+
   const update = (i: number, patch: Partial<ResourceRow>) =>
     onResourcesChange(resources.map((r, ri) => (ri === i ? { ...r, ...patch } : r)));
 
@@ -83,7 +94,8 @@ export function TopicExtrasFields({
           <Link2 className="w-3.5 h-3.5" /> More videos &amp; links <span className="normal-case font-normal">(optional)</span>
         </p>
         <p className="text-[12px] text-navy-500">
-          Further videos or reference links for this lesson, beyond the main video above.
+          Further videos or reference links for this lesson, beyond the main video above. Upload a video
+          from this computer, or paste a link to one.
         </p>
 
         {resources.map((r, i) => (
@@ -122,13 +134,44 @@ export function TopicExtrasFields({
           </div>
         ))}
 
+        {showUploader && (
+          <div className="rounded-xl border border-navy-200 bg-white p-3 space-y-1.5">
+            <p className="text-[12px] font-semibold text-navy-700">Choose a video file</p>
+            <FileDropzone
+              kind={StoredFileKind.VIDEO}
+              accept="video/*"
+              files={[]}
+              noun="a video"
+              onChange={(uploaded) => {
+                const file = uploaded[uploaded.length - 1];
+                if (!file?.url) return;
+                onResourcesChange([
+                  ...resources,
+                  { title: titleFromFileName(file.originalName), url: file.url, kind: 'VIDEO' },
+                ]);
+                setShowUploader(false);
+              }}
+            />
+            <p className="text-[12px] text-navy-400">
+              Up to {MAX_UPLOAD_LABEL}. For anything larger, put it on YouTube and paste the link instead.
+            </p>
+          </div>
+        )}
+
         <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setShowUploader((v) => !v)}
+            className="inline-flex items-center gap-1 text-xs font-bold text-crimson-600 hover:underline"
+          >
+            <Upload className="w-3.5 h-3.5" /> {showUploader ? 'Close uploader' : 'Upload a video'}
+          </button>
           <button
             type="button"
             onClick={() => onResourcesChange([...resources, { title: '', url: '', kind: 'VIDEO' }])}
             className="inline-flex items-center gap-1 text-xs font-bold text-crimson-600 hover:underline"
           >
-            <Video className="w-3.5 h-3.5" /> <Plus className="w-3 h-3 -ml-1" /> Add a video
+            <Video className="w-3.5 h-3.5" /> <Plus className="w-3 h-3 -ml-1" /> Paste a video link
           </button>
           <button
             type="button"
