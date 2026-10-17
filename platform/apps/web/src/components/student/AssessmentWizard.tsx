@@ -284,7 +284,7 @@ export function AssessmentWizard({
                 {!r.correct && objectiveQuestions.find((q) => q.id === r.questionId)?.allowMultiple && (
                   <p className="text-navy-600 mt-0.5">This question needed every correct option ticked, and no others.</p>
                 )}
-                <p className="text-navy-500 mt-0.5">{r.explanation}</p>
+                {r.explanation && <p className="text-navy-500 mt-0.5">{r.explanation}</p>}
               </div>
             ))}
           </div>

@@ -67,10 +67,10 @@ export class CreateQuestionDto {
   @Min(0, { each: true })
   correctIndices?: number[];
 
+  /** Optional; blank means the question has no explanation. */
   @ApiProperty({ required: false })
-  @ValidateIf(isType(QuizQuestionType.OBJECTIVE))
+  @IsOptional()
   @IsString()
-  @MinLength(5)
   explanation?: string;
 
   /** Why each option is right or wrong, in option order; "" where there is nothing to say. */

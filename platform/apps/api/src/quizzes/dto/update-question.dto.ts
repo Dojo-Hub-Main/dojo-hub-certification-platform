@@ -56,9 +56,9 @@ export class UpdateQuestionDto {
   correctIndices?: number[];
 
   @ApiProperty({ required: false })
+  /** Blank clears the explanation. */
   @IsOptional()
   @IsString()
-  @MinLength(5)
   explanation?: string;
 
   /** Why each option is right or wrong, in option order; "" where there is nothing to say. */

@@ -73,7 +73,6 @@ function validationMessage(d: Draft): string | null {
   } else if (d.correctIndex >= d.options.length) {
     return 'Mark which option is correct.';
   }
-  if (d.explanation.trim().length < 5) return 'Add an explanation of at least 5 characters.';
   return null;
 }
 
@@ -88,6 +87,8 @@ export function ModuleQuizEditor({ mod, trackId }: { mod: ModuleDto; trackId: st
   const [settings, setSettings] = useState({ title: '', passThreshold: 70 });
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Set once the admin tries to save an incomplete question, so what's missing shows clearly.
+  const [showProblem, setShowProblem] = useState(false);
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['track', 'admin', trackId] });
   const fail = (e: unknown) => setError(e instanceof ApiError ? e.message : 'Something went wrong. Try again.');
@@ -123,6 +124,7 @@ export function ModuleQuizEditor({ mod, trackId }: { mod: ModuleDto; trackId: st
     onSuccess: () => {
       setEditing(null);
       setDraft(BLANK);
+      setShowProblem(false);
       done();
     },
     onError: fail,
@@ -158,11 +160,13 @@ export function ModuleQuizEditor({ mod, trackId }: { mod: ModuleDto; trackId: st
 
   const openNew = () => {
     setError(null);
+    setShowProblem(false);
     setDraft(BLANK);
     setEditing('new');
   };
   const openEdit = (q: QuizQuestionAdminDto) => {
     setError(null);
+    setShowProblem(false);
     setConfirmingDelete(null);
     setDraft(toDraft(q));
     setEditing(q.id);
@@ -171,7 +175,20 @@ export function ModuleQuizEditor({ mod, trackId }: { mod: ModuleDto; trackId: st
     setEditing(null);
     setDraft(BLANK);
     setError(null);
+    setShowProblem(false);
   };
+  /** Saves the open form, or says what it still needs instead of leaving Save greyed out. */
+  const submit = (another: boolean) => {
+    if (validationMessage(draft)) {
+      setShowProblem(true);
+      return;
+    }
+    // `another` leaves a blank form open afterwards, ready for the next question.
+    saveQuestion.mutate(undefined, { onSuccess: () => another && setEditing('new') });
+  };
+  // The Add question button stays on screen. With a new question already open it saves
+  // that one first, so the admin never loses the way to add the next.
+  const addQuestion = () => (editing === 'new' ? submit(true) : openNew());
 
   if (!quiz) {
     return (
@@ -343,7 +360,7 @@ export function ModuleQuizEditor({ mod, trackId }: { mod: ModuleDto; trackId: st
       <textarea
         className="input text-sm resize-y"
         rows={2}
-        placeholder="Explanation — shown once a student gets this right, and in their answer review"
+        placeholder="Explanation (optional) — shown once a student gets this right, and in their answer review"
         value={draft.explanation}
         onChange={(e) => setDraft({ ...draft, explanation: e.target.value })}
       />
@@ -376,10 +393,17 @@ export function ModuleQuizEditor({ mod, trackId }: { mod: ModuleDto; trackId: st
         </p>
       )}
 
-      {draftProblem && <p className="text-xs text-navy-500">{draftProblem}</p>}
+      {draftProblem &&
+        (showProblem ? (
+          <p className="text-xs font-semibold text-crimson-700" role="alert">
+            Can&apos;t save yet: {draftProblem}
+          </p>
+        ) : (
+          <p className="text-xs text-navy-500">{draftProblem}</p>
+        ))}
 
       <div className="flex gap-2">
-        <Button size="sm" onClick={() => saveQuestion.mutate()} loading={saveQuestion.isPending} disabled={!!draftProblem}>
+        <Button size="sm" onClick={() => submit(false)} loading={saveQuestion.isPending}>
           {editing === 'new' ? 'Save question' : 'Save changes'}
         </Button>
         <Button size="sm" variant="outline" onClick={closeForm}>
@@ -540,15 +564,12 @@ export function ModuleQuizEditor({ mod, trackId }: { mod: ModuleDto; trackId: st
         )}
       </ul>
 
-      {editing === 'new' ? (
-        questionForm
-      ) : (
-        <div className="p-3 border-t border-navy-100">
-          <Button size="sm" variant="outline" onClick={openNew}>
-            <Plus className="w-3.5 h-3.5" /> Add question
-          </Button>
-        </div>
-      )}
+      {editing === 'new' && questionForm}
+      <div className="p-3 border-t border-navy-100">
+        <Button size="sm" variant="outline" onClick={addQuestion} loading={editing === 'new' && saveQuestion.isPending}>
+          <Plus className="w-3.5 h-3.5" /> {editing === 'new' ? 'Save and add another question' : 'Add question'}
+        </Button>
+      </div>
     </div>
   );
 }

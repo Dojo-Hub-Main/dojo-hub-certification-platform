@@ -154,6 +154,7 @@ export class QuizzesService {
         ...fields,
         ...answerKey,
         ...extras,
+        explanation: fields.explanation?.trim() || null,
         order: last ? last.order + 1 : 0,
         options: dto.options ?? [],
         sampleKeywords: dto.sampleKeywords ?? [],
@@ -250,7 +251,15 @@ export class QuizzesService {
 
     const question = await this.prisma.quizQuestion.update({
       where: { id: questionId },
-      data: { ...fields, ...answerKey, ...extras },
+      data: {
+        ...fields,
+        ...answerKey,
+        ...extras,
+        // The explanation is optional, so a blank one is stored as none at all.
+        ...(fields.explanation !== undefined && {
+          explanation: fields.explanation.trim() || null,
+        }),
+      },
     });
 
     await this.auditService.log({
