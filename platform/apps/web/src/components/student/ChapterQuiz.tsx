@@ -127,6 +127,13 @@ export function ChapterQuiz({ quiz, onClose }: { quiz: QuizDto; onClose: () => v
             You answered {result.objectiveScore} of {result.objectiveTotal} question{result.objectiveTotal === 1 ? '' : 's'}{' '}
             correctly.
           </p>
+          {/* The score beside the pass mark, so a student can see how close they came. */}
+          <p className="text-sm text-navy-700">
+            <span className={`font-bold ${passed ? 'text-green-700' : 'text-navy-950'}`}>
+              Your score: {Math.round(result.objectivePercentage)}%
+            </span>{' '}
+            · Pass mark: {quiz.passThreshold}%
+          </p>
           <p className="text-sm text-navy-600">
             {passed
               ? 'Nice work — you passed this quiz.'
