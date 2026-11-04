@@ -7,10 +7,13 @@ import { useEffect, useState } from 'react';
  * the picture reinforces the caption rather than being decoration.
  */
 const SLIDES = [
-  { src: '/hero/hero-software.jpg', label: 'Software Engineering', caption: 'Build and ship real software' },
-  { src: '/hero/hero-hardware.jpg', label: 'Hardware & IoT', caption: 'Work with real equipment' },
-  { src: '/hero/hero-data.jpg', label: 'Data Science', caption: 'Turn data into decisions' },
-  { src: '/hero/hero-analytics.jpg', label: 'Cloud & Analytics', caption: 'Master the modern stack' },
+  // Two photos per course, alternated so the same course never shows twice in a row.
+  { src: '/hero/software-code.jpg', label: 'Software Engineering', caption: 'Write code that ships' },
+  { src: '/hero/automation-line.jpg', label: 'Industrial Automation', caption: 'Program the machines that run production' },
+  { src: '/hero/embedded-board.jpg', label: 'Embedded Systems & Hardware', caption: 'Understand the boards behind every device' },
+  { src: '/hero/software-desk.jpg', label: 'Software Engineering', caption: 'Build and ship real software' },
+  { src: '/hero/automation-panel.jpg', label: 'Industrial Automation', caption: 'Wire, test and commission PLC panels' },
+  { src: '/hero/embedded-hands.jpg', label: 'Embedded Systems & Hardware', caption: 'Work hands-on with real hardware' },
 ];
 
 const INTERVAL_MS = 5000;
@@ -28,10 +31,9 @@ export function HeroCarousel() {
     return () => clearInterval(id);
   }, [paused]);
 
-  // The frame is 3/2 from `sm` up because that matches the source photos (612x408 and
-  // 612x344). A 4/3 frame forced object-cover to upscale every slide to fill it — ~8%
-  // for the 3:2 shots, ~29% for the 16:9 ones — which softens them on a high-DPI screen
-  // for no gain. Portrait phones keep 4/3, where a taller crop reads better.
+  // The frame is 3/2 from `sm` up because every photo is pre-cropped to 3:2 at 1500x1000,
+  // so object-cover shows each one whole there. Portrait phones keep 4/3, where a taller
+  // crop reads better and only the sides are trimmed.
   return (
     <div
       className="relative w-full aspect-[4/3] sm:aspect-[3/2] lg:aspect-[3/2] rounded-3xl overflow-hidden bg-navy-900 shadow-2xl shadow-black/30"
