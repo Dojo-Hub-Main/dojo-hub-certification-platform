@@ -1,12 +1,23 @@
 import type { Metadata } from 'next';
-import { Inter, JetBrains_Mono } from 'next/font/google';
+import localFont from 'next/font/local';
 import './globals.css';
 import { QueryProvider } from '@/lib/query-provider';
 import { AuthProvider } from '@/lib/auth-context';
 import { SocketProvider } from '@/lib/socket-provider';
 
-const inter = Inter({ variable: '--font-inter', subsets: ['latin'], weight: ['400', '500', '600', '700', '800'] });
-const jetbrainsMono = JetBrains_Mono({ variable: '--font-jetbrains-mono', subsets: ['latin'], weight: ['400', '500', '600', '700'] });
+// The fonts ship with the app rather than coming from next/font/google, which downloads
+// them during every build: when Google Fonts didn't answer in time, the Render build
+// failed. These are the variable Latin files (from Fontsource), covering every weight.
+const inter = localFont({
+  src: './fonts/inter-latin-wght-normal.woff2',
+  variable: '--font-inter',
+  weight: '100 900',
+});
+const jetbrainsMono = localFont({
+  src: './fonts/jetbrains-mono-latin-wght-normal.woff2',
+  variable: '--font-jetbrains-mono',
+  weight: '100 800',
+});
 
 export const metadata: Metadata = {
   title: 'Dojo Hub Learning Platform',
