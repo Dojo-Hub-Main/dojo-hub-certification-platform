@@ -7,13 +7,13 @@ import { useEffect, useState } from 'react';
  * the picture reinforces the caption rather than being decoration.
  */
 const SLIDES = [
-  // Two photos per course, alternated so the same course never shows twice in a row.
+  // Ordered so the same course never shows twice in a row, including when it loops back.
   { src: '/hero/software-code.jpg', label: 'Software Engineering', caption: 'Write code that ships' },
-  { src: '/hero/automation-line.jpg', label: 'Industrial Automation', caption: 'Program the machines that run production' },
+  { src: '/hero/automation-factory.jpg', label: 'Industrial Automation', caption: 'Automate real production lines' },
   { src: '/hero/embedded-board.jpg', label: 'Embedded Systems & Hardware', caption: 'Understand the boards behind every device' },
+  { src: '/hero/automation-line.jpg', label: 'Industrial Automation', caption: 'Program the machines that run production' },
   { src: '/hero/software-desk.jpg', label: 'Software Engineering', caption: 'Build and ship real software' },
-  { src: '/hero/automation-panel.jpg', label: 'Industrial Automation', caption: 'Wire, test and commission PLC panels' },
-  { src: '/hero/embedded-hands.jpg', label: 'Embedded Systems & Hardware', caption: 'Work hands-on with real hardware' },
+  { src: '/hero/automation-plc.jpg', label: 'Industrial Automation', caption: 'Program the PLCs that control the plant' },
 ];
 
 const INTERVAL_MS = 5000;
